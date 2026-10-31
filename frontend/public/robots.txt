@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+
+# Independent frontend prototype of the public Cynbit Technologies website.
+# The sitemap lists public routes only (/admin is excluded above).
+# Replace the domain below (and in sitemap.xml) with the deployment domain.
+Sitemap: https://cynbit-prototype.example.com/sitemap.xml
