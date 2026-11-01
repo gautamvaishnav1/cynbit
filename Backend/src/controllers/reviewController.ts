@@ -3,18 +3,26 @@ import { Request, Response } from 'express';
 import { getOrCreateSettings } from './settingsController';
 import { computeSummary } from '../utils/rating';
 import { ApiError } from '../utils/ApiError';
-import { isProductId, isReviewStatus, isUuid } from '../types';
-import { Review, ReviewDoc } from '../models/Review';
-import {
-  AdminReview,
-  ProductId,
-  PublicReview,
-  RatingSummary,
-  ReviewEditInput,
-  ReviewStatus,
-  ReviewStatusUpdate,
-  ReviewSubmissionInput,
-} from '../types';
+import { isProductId, isReviewStatus, isUuid, ProductId, RatingSummary, ReviewStatus } from '../types';
+import { Review, ReviewRecord } from '../models/Review';
+
+export interface PublicReview {
+  id: string;
+  productId: ProductId;
+  customerName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  status: ReviewStatus;
+}
+
+export interface AdminReview extends PublicReview {
+  email: string;
+}
+
+export interface ReviewStatusUpdate {
+  status: ReviewStatus;
+}
 
 /* Express 5 route params are typed string | string[]. */
 function readParam(param: string | string[]): string {
@@ -30,7 +38,7 @@ function findProductOr404(productIdParam: string | string[]): ProductId {
   return productId;
 }
 
-async function findReviewOr404(idParam: string | string[]): Promise<ReviewDoc> {
+async function findReviewOr404(idParam: string | string[]): Promise<ReviewRecord> {
   const id = readParam(idParam);
   if (!isUuid(id)) {
     throw new ApiError(404, 'NOT_FOUND', 'Review not found.');
@@ -42,19 +50,23 @@ async function findReviewOr404(idParam: string | string[]): Promise<ReviewDoc> {
   return review;
 }
 
-function toPublicReview(doc: ReviewDoc): PublicReview {
+function toIsoString(value: Date | string): string {
+  return typeof value === 'string' ? value : value.toISOString();
+}
+
+function toPublicReview(doc: ReviewRecord): PublicReview {
   return {
     id: doc._id,
     productId: doc.productId,
     customerName: doc.customerName,
     rating: doc.rating,
     comment: doc.comment,
-    createdAt: doc.createdAt.toISOString(),
+    createdAt: toIsoString(doc.createdAt),
     status: doc.status,
   };
 }
 
-function toAdminReview(doc: ReviewDoc): AdminReview {
+function toAdminReview(doc: ReviewRecord): AdminReview {
   return { ...toPublicReview(doc), email: doc.email };
 }
 
@@ -65,16 +77,15 @@ function toAdminReview(doc: ReviewDoc): AdminReview {
 /** GET /api/products/:productId/reviews — approved only, newest first. */
 export async function getReviews(req: Request, res: Response): Promise<void> {
   const productId = findProductOr404(req.params.productId);
-  const reviews = await Review.find({ productId, status: 'approved' }).sort({
-    createdAt: -1,
-  });
+  const reviews = await Review.find({ productId, status: 'approved' });
+  reviews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   res.status(200).json(reviews.map(toPublicReview));
 }
 
 /** GET /api/products/:productId/reviews/summary — zeroed when empty. */
 export async function getSummary(req: Request, res: Response): Promise<void> {
   const productId = findProductOr404(req.params.productId);
-  const docs = await Review.find({ productId, status: 'approved' }).select('rating');
+  const docs = await Review.find({ productId, status: 'approved' });
   const summary = computeSummary(docs.map((doc) => doc.rating));
   const response: RatingSummary = { productId, ...summary };
   res.status(200).json(response);
@@ -86,7 +97,7 @@ export async function getSummary(req: Request, res: Response): Promise<void> {
  */
 export async function submitReview(req: Request, res: Response): Promise<void> {
   const productId = findProductOr404(req.params.productId);
-  const input = req.body as ReviewSubmissionInput;
+  const input = req.body as { customerName: string; email: string; rating: number; comment: string };
 
   const settings = await getOrCreateSettings();
   if (!settings.productReviewsEnabled) {
@@ -100,6 +111,7 @@ export async function submitReview(req: Request, res: Response): Promise<void> {
     rating: input.rating,
     comment: input.comment,
     status: settings.autoApproveSubmissions ? 'approved' : 'pending',
+    createdAt: new Date(),
   });
 
   /* Contract §2.1: the POST response is the full object (email included). */
@@ -120,7 +132,8 @@ export async function listAllReviews(req: Request, res: Response): Promise<void>
     filter.productId = req.query.productId;
   }
 
-  const reviews = await Review.find(filter).sort({ createdAt: -1 });
+  const reviews = await Review.find(filter);
+  reviews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   res.status(200).json(reviews.map(toAdminReview));
 }
 
@@ -130,26 +143,27 @@ export async function setReviewStatus(req: Request, res: Response): Promise<void
   const { status } = req.body as ReviewStatusUpdate;
 
   review.status = status;
-  await review.save();
+  await Review.save(review);
 
   res.status(200).json(toAdminReview(review));
 }
 
 /** PATCH /api/admin/reviews/:id — edit rating and/or comment. */
 export async function updateReview(req: Request, res: Response): Promise<void> {
-  const patch = req.body as ReviewEditInput;
+  const patch = req.body as { rating?: number; comment?: string };
   const review = await findReviewOr404(req.params.id);
 
   if (patch.rating !== undefined) review.rating = patch.rating;
   if (patch.comment !== undefined) review.comment = patch.comment;
-  await review.save();
+  await Review.save(review);
 
   res.status(200).json(toAdminReview(review));
 }
 
 /** DELETE /api/admin/reviews/:id — hard delete. */
 export async function deleteReview(req: Request, res: Response): Promise<void> {
-  const review = await findReviewOr404(req.params.id);
-  await review.deleteOne();
+  const id = readParam(req.params.id);
+  await Review.findById(id); // verify exists (throws 404 if not)
+  await Review.deleteOne(id);
   res.status(204).end();
 }

@@ -9,22 +9,24 @@ import { cn } from '../../utils/cn';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Mock admin sign-in gate.
+ * Admin sign-in gate.
  *
- * There is NO real authentication here (no backend, no password check) —
- * the form only validates its own input so the flow feels realistic. Any
- * email + password combination opens the demo dashboard. A real deployment
- * must authenticate server-side and authorise every admin endpoint.
+ * With VITE_API_BASE_URL configured this authenticates against
+ * POST /api/admin/auth/login and only the seeded admin account is
+ * accepted. Without it (offline demo mode) any email/password opens the
+ * demo dashboard — clearly labelled as a demo gate with no security.
  */
 export function AdminSignIn() {
-  const { signIn } = useAdminSession();
+  const { signIn, realAuth } = useAdminSession();
   const uid = useId();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const next: { email?: string; password?: string } = {};
@@ -38,12 +40,22 @@ export function AdminSignIn() {
     }
 
     setErrors(next);
+    setFormError(null);
     if (next.email || next.password) {
       document.getElementById(next.email ? `${uid}-email` : `${uid}-password`)?.focus();
       return;
     }
 
-    signIn(email.trim());
+    setSubmitting(true);
+    try {
+      await signIn(email.trim(), password);
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : 'Sign-in failed. Please try again.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -55,7 +67,7 @@ export function AdminSignIn() {
               <Logo />
               <span className="inline-flex items-center gap-1.5 rounded-full bg-sand-200 px-3 py-1.5 text-[10.5px] font-extrabold tracking-[0.12em] text-ink uppercase">
                 <ShieldCheck size={13} aria-hidden="true" />
-                Prototype
+                {realAuth ? 'Admin' : 'Prototype'}
               </span>
             </div>
             <h1 className="mt-7 font-display text-[26px] leading-tight font-extrabold tracking-[-0.03em] text-ink">
@@ -68,14 +80,34 @@ export function AdminSignIn() {
           </div>
 
           <div className="px-8 py-7">
-            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-sand-300 bg-sand-100 px-4 py-3.5">
-              <AlertTriangle size={17} className="mt-0.5 shrink-0 text-sand-700" />
-              <p className="text-[13px] leading-relaxed text-sand-700">
-                <strong className="font-extrabold">Demo gate only.</strong> This prototype has no
-                backend or real authentication — any email and password will open the dashboard.
-                Never use real credentials.
-              </p>
-            </div>
+            {realAuth ? (
+              <div className="mb-6 flex items-start gap-3 rounded-2xl border border-sand-300 bg-sand-100 px-4 py-3.5">
+                <ShieldCheck size={17} className="mt-0.5 shrink-0 text-sand-700" />
+                <p className="text-[13px] leading-relaxed text-sand-700">
+                  <strong className="font-extrabold">Backend sign-in.</strong> Credentials are
+                  verified by the API. Use the admin account configured in the backend{' '}
+                  <code className="font-mono">.env</code>.
+                </p>
+              </div>
+            ) : (
+              <div className="mb-6 flex items-start gap-3 rounded-2xl border border-sand-300 bg-sand-100 px-4 py-3.5">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0 text-sand-700" />
+                <p className="text-[13px] leading-relaxed text-sand-700">
+                  <strong className="font-extrabold">Demo gate only.</strong> The backend is not
+                  configured — any email and password will open the dashboard. Never use real
+                  credentials.
+                </p>
+              </div>
+            )}
+
+            {formError && (
+              <div
+                role="alert"
+                className="mb-5 rounded-2xl border border-[#f2c4c7] bg-[#fdf0f1] px-4 py-3.5 text-[13px] leading-relaxed text-[#a3272d]"
+              >
+                {formError}
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} noValidate className="grid gap-5">
               <div>
@@ -128,15 +160,17 @@ export function AdminSignIn() {
                 )}
               </div>
 
-              <Button type="submit" className="mt-1 w-full">
-                Open dashboard
+              <Button type="submit" className="mt-1 w-full" disabled={submitting}>
+                {submitting ? 'Signing in…' : 'Open dashboard'}
               </Button>
             </form>
           </div>
         </div>
 
         <p className="mt-5 text-center text-[13px] text-ink-mute">
-          Data shown here is stored locally in this browser only.
+          {realAuth
+            ? 'Admin sessions are issued by the backend and expire after 7 days.'
+            : 'Data shown here is stored locally in this browser only.'}
         </p>
       </div>
     </div>

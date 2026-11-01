@@ -33,7 +33,7 @@ async function seedAdmin(): Promise<void> {
     /* Production-safe: never overwrite an existing admin's password on seed. */
     logger.info(`Admin already exists for ${email} — leaving password unchanged.`);
   } else {
-    await Admin.create({ email, passwordHash });
+    await Admin.create({ email, passwordHash, role: 'admin', createdAt: new Date() });
     logger.info(`Admin created: ${email}`);
   }
 }

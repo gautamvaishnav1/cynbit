@@ -1,23 +1,18 @@
 import type { ReviewSectionSettings } from '../types';
+import { API_ENABLED, request } from './apiClient';
 
 /* ==================================================================
-   PROTOTYPE SECTION-SETTINGS SERVICE — NO BACKEND.
+   SECTION-SETTINGS SERVICE — REST-backed (JSON.md contract).
 
-   Backs the admin panel's "Section settings" tab: which review sections
-   the public site shows and whether new submissions need moderation.
+   Backs the admin panel's "Section settings" tab:
 
-   Async shape mirrors a future REST layer:
-
-     getSettings()          <-  GET  /api/admin/review-settings
+     getSettings()          <-  GET   /api/admin/review-settings
      updateSettings(patch)  <-  PATCH /api/admin/review-settings
 
-   State lives in memory and is mirrored to localStorage. The synchronous
-   snapshot is used by reviewService.submitReview to decide the initial
-   moderation status of a submission (a real backend makes that decision
-   server-side).
+   The localStorage snapshot (offline demo mode) exists only so the
+   prototype still runs without the backend configured.
    ================================================================== */
 
-const LATENCY_MS = 220;
 const STORAGE_KEY = 'cynbit.prototype.reviewSettings.v1';
 
 /** Sensible defaults: everything visible, moderation ON (no auto-approve). */
@@ -77,29 +72,46 @@ export function subscribeSettings(listener: () => void): () => void {
 }
 
 /**
- * Synchronous snapshot of the current settings.
- * Used internally (e.g. by reviewService) — UI code should prefer the
- * SettingsProvider/hook so it re-renders on changes.
+ * Synchronous snapshot of the current settings (offline fallback only).
+ * UI code should prefer the SettingsProvider/hook so it re-renders.
  */
 export function getSettingsSnapshot(): ReviewSectionSettings {
   return { ...store };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+/** Update the cached snapshot (used after every server read/write). */
+function cacheSettings(next: ReviewSectionSettings): ReviewSectionSettings {
+  store = { ...next };
+  return { ...next };
 }
 
 /** Current settings (async — mirrors GET /api/admin/review-settings). */
 export async function getSettings(): Promise<ReviewSectionSettings> {
-  await delay(LATENCY_MS);
+  if (API_ENABLED) {
+    const server = await request<ReviewSectionSettings>(
+      '/api/admin/review-settings',
+      { admin: true },
+    );
+    return cacheSettings(server);
+  }
+
   return { ...store };
 }
 
-/** Apply a partial update and notify subscribers (async — mirrors PATCH). */
+/** Apply a partial update (async — mirrors PATCH /api/admin/review-settings). */
 export async function updateSettings(
   patch: Partial<ReviewSectionSettings>,
 ): Promise<ReviewSectionSettings> {
-  await delay(LATENCY_MS);
+  if (API_ENABLED) {
+    const updated = await request<ReviewSectionSettings>(
+      '/api/admin/review-settings',
+      { method: 'PATCH', body: patch, admin: true },
+    );
+    cacheSettings(updated);
+    notify();
+    return { ...updated };
+  }
+
   store = { ...store, ...patch };
   writeStore(store);
   notify();
@@ -108,7 +120,16 @@ export async function updateSettings(
 
 /** Restore the defaults (used by the admin "reset prototype data" action). */
 export async function resetSettings(): Promise<void> {
-  await delay(LATENCY_MS);
+  if (API_ENABLED) {
+    await request<ReviewSectionSettings>('/api/admin/review-settings', {
+      method: 'PATCH',
+      body: { ...DEFAULT_SETTINGS },
+      admin: true,
+    });
+    cacheSettings({ ...DEFAULT_SETTINGS });
+    notify();
+    return;
+  }
   store = { ...DEFAULT_SETTINGS };
   writeStore(store);
   notify();

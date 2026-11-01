@@ -1,23 +1,28 @@
 import { useEffect, useState } from 'react';
 
+import { API_ENABLED, getToken, setToken } from '../services/apiClient';
+
 /**
- * Prototype admin session.
+ * Admin session for the review panel.
  *
- * IMPORTANT: this is NOT authentication. There is no backend, no password
- * check and no security — the flag below only hides the demo dashboard UI
- * behind a sign-in screen so the flow feels realistic. A real deployment
- * must use server-side auth (session cookies / JWT) with role checks on
- * every admin endpoint.
+ * WITH VITE_API_BASE_URL (real mode): `signIn(email, password)` calls
+ * POST /api/admin/auth/login. Only the seeded admin account
+ * (ADMIN_EMAIL / ADMIN_PASSWORD in the backend .env) receives a JWT; the
+ * token is stored and sent as `Authorization: Bearer <token>` on every
+ * admin request. Invalid credentials fail with the server's message.
  *
- * State lives in a tiny module-level store (mirrored to sessionStorage) so
- * every consumer of this hook shares one source of truth — the sign-in
- * form and the layout that gates the dashboard stay in sync.
+ * WITHOUT the env var (offline demo mode): any email/password opens the
+ * demo dashboard — clearly labelled as a demo gate, no security.
+ *
+ * State lives in a tiny module-level store (mirrored to sessionStorage)
+ * so the sign-in form and the layout gate stay in sync.
  */
 const SESSION_KEY = 'cynbit.prototype.adminSession.v1';
 const EMAIL_KEY = `${SESSION_KEY}.email`;
 
 function readFlag(): boolean {
   try {
+    if (API_ENABLED) return Boolean(getToken());
     return window.sessionStorage.getItem(SESSION_KEY) === 'active';
   } catch {
     return false;
@@ -50,7 +55,10 @@ export interface AdminSession {
   signedIn: boolean;
   /** Address captured at sign-in, shown in the admin top bar. */
   signedInAs: string | null;
-  signIn: (email: string) => void;
+  /** True when sign-in authenticates against the backend. */
+  realAuth: boolean;
+  /** Resolves on success; throws an Error with the message to display. */
+  signIn: (email: string, password?: string) => Promise<void>;
   signOut: () => void;
 }
 
@@ -73,7 +81,24 @@ export function useAdminSession(): AdminSession {
     };
   }, []);
 
-  const signIn = (email: string) => {
+  const signIn = async (email: string, password?: string): Promise<void> => {
+    if (API_ENABLED) {
+      const { request } = await import('../services/apiClient');
+      const response = await request<{ token: string; user: { email: string } }>(
+        '/api/admin/auth/login',
+        { method: 'POST', body: { email, password: password ?? '' } },
+      );
+      setToken(response.token);
+      try {
+        window.sessionStorage.setItem(EMAIL_KEY, response.user.email);
+      } catch {
+        /* Storage unavailable */
+      }
+      store = { signedIn: true, signedInAs: response.user.email };
+      notify();
+      return;
+    }
+
     try {
       window.sessionStorage.setItem(SESSION_KEY, 'active');
       window.sessionStorage.setItem(EMAIL_KEY, email);
@@ -85,6 +110,7 @@ export function useAdminSession(): AdminSession {
   };
 
   const signOut = () => {
+    setToken(null);
     try {
       window.sessionStorage.removeItem(SESSION_KEY);
       window.sessionStorage.removeItem(EMAIL_KEY);
@@ -95,7 +121,13 @@ export function useAdminSession(): AdminSession {
     notify();
   };
 
-  return { signedIn: store.signedIn, signedInAs: store.signedInAs, signIn, signOut };
+  return {
+    signedIn: store.signedIn,
+    signedInAs: store.signedInAs,
+    realAuth: API_ENABLED,
+    signIn,
+    signOut,
+  };
 }
 
 export default useAdminSession;

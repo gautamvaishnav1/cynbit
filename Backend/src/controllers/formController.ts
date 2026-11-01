@@ -9,14 +9,6 @@ import {
   NewsletterInput,
 } from '../types';
 
-/** MongoDB duplicate-key errors carry code 11000. */
-function isDuplicateKeyError(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('code' in error)) {
-    return false;
-  }
-  return (error as { code?: unknown }).code === 11000;
-}
-
 /** POST /api/demo-requests (contract §2.5). */
 export async function createDemoRequest(req: Request, res: Response): Promise<void> {
   const input = req.body as DemoRequestInput;
@@ -27,6 +19,7 @@ export async function createDemoRequest(req: Request, res: Response): Promise<vo
     workEmail: input.workEmail,
     companyName: input.companyName?.trim() || undefined,
     message: input.message,
+    createdAt: new Date(),
   });
 
   res.status(201).json({
@@ -45,6 +38,7 @@ export async function createContactInquiry(req: Request, res: Response): Promise
     company: input.company?.trim() || undefined,
     industry: input.industry?.trim() || undefined,
     message: input.message,
+    createdAt: new Date(),
   });
 
   res.status(201).json({
@@ -69,6 +63,6 @@ export async function subscribeNewsletter(req: Request, res: Response): Promise<
     return;
   }
 
-  const subscriber = await NewsletterSubscriber.create({ email: input.email });
+  const subscriber = await NewsletterSubscriber.create({ email: input.email, createdAt: new Date() });
   res.status(201).json({ id: subscriber._id });
 }

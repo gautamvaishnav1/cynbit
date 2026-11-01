@@ -1,14 +1,13 @@
 import type { ProductId, RatingSummary, Review, ReviewInput, ReviewStatus } from '../types';
 import { seedReviews } from '../data/reviews';
 import { computeRatingSummary } from '../utils/rating';
-import { getSettingsSnapshot } from './settingsService';
+import { API_ENABLED, request } from './apiClient';
 
 /* ==================================================================
-   PROTOTYPE REVIEW SERVICE — NO BACKEND, NO DATABASE.
+   REVIEW SERVICE — REST-backed (JSON.md contract).
 
-   Everything in this file is deliberately isolated behind a small async
-   interface so the future REST layer can replace it without any component
-   changes:
+   When VITE_API_BASE_URL is configured every call goes to the real
+   backend:
 
      getReviews(productId)       <-  GET    /api/products/:id/reviews
      getRatingSummary(productId) <-  GET    /api/products/:id/reviews/summary
@@ -18,17 +17,21 @@ import { getSettingsSnapshot } from './settingsService';
      updateReview(id, patch)     <-  PATCH  /api/admin/reviews/:id
      deleteReview(id)            <-  DELETE /api/admin/reviews/:id
 
-   State lives in memory for the lifetime of the browser tab and is mirrored
-   to localStorage (so admin moderation survives a refresh). Nothing is ever
-   transmitted anywhere.
+   Without the env var (demo/offline mode) it falls back to a local
+   localStorage mirror so the prototype still runs.
    ================================================================== */
 
-/** Simulated network latency so loading states are observable. */
-const LATENCY_MS = 420;
 const STORAGE_KEY = 'cynbit.prototype.reviews.v2';
 
 export const MIN_REVIEW_LENGTH = 10;
 export const MAX_REVIEW_LENGTH = 600;
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/* ------------------------------------------------------------------
+   Local (offline/demo) fallback store — identical behaviour to the
+   REST API so the UI never needs to know which mode it is in.
+------------------------------------------------------------------- */
 
 function readStore(): Review[] {
   try {
@@ -69,14 +72,14 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function createId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `rev_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
+/** Simulated latency only in offline demo mode. */
+const LATENCY_MS = API_ENABLED ? 0 : 260;
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/* ------------------------------------------------------------------
+   Shared client-side validation (mirrors server rules; the server
+   remains the source of truth for accept/reject).
+------------------------------------------------------------------- */
 
-/** Server-side-equivalent validation. Returned as user-facing messages. */
 export function validateReviewInput(input: ReviewInput): string[] {
   const errors: string[] = [];
 
@@ -106,8 +109,15 @@ export function validateReviewInput(input: ReviewInput): string[] {
   return errors;
 }
 
+/* ------------------------------------------------------------------
+   Public API
+------------------------------------------------------------------- */
+
 /** Approved reviews for a product, newest first. */
 export async function getReviews(productId: ProductId): Promise<Review[]> {
+  if (API_ENABLED) {
+    return request<Review[]>(`/api/products/${encodeURIComponent(productId)}/reviews`);
+  }
   await delay(LATENCY_MS);
   return store
     .filter((review) => review.productId === productId && review.status === 'approved')
@@ -116,27 +126,35 @@ export async function getReviews(productId: ProductId): Promise<Review[]> {
 
 /** Aggregated rating roll-up. Always returns zeroed data when empty. */
 export async function getRatingSummary(productId: ProductId): Promise<RatingSummary> {
+  if (API_ENABLED) {
+    return request<RatingSummary>(
+      `/api/products/${encodeURIComponent(productId)}/reviews/summary`,
+    );
+  }
   await delay(LATENCY_MS);
   return computeRatingSummary(productId, store);
 }
 
 /**
- * Persist a review.
- *
- * MODERATION: the initial status mirrors the admin panel's auto-approve
- * setting (a real backend always decides this server-side): submissions are
- * created `pending` and only appear publicly once an admin approves them,
- * unless auto-approve is switched on for quick demos.
+ * Persist a review. The backend decides the initial status
+ * (moderation default: `pending`), never the client.
  */
 export async function submitReview(input: ReviewInput): Promise<Review> {
-  await delay(LATENCY_MS * 1.5);
-
   const errors = validateReviewInput(input);
-  if (errors.length > 0) {
-    throw new Error(errors.join(' '));
+  if (errors.length > 0) throw new Error(errors.join(' '));
+
+  if (API_ENABLED) {
+    const { productId, ...body } = input;
+    const created = await request<Review>(
+      `/api/products/${encodeURIComponent(productId)}/reviews`,
+      { method: 'POST', body },
+    );
+    notify();
+    return created;
   }
 
-  const { autoApproveSubmissions } = getSettingsSnapshot();
+  await delay(LATENCY_MS * 1.5);
+
   const review: Review = {
     id: createId(),
     productId: input.productId,
@@ -145,7 +163,7 @@ export async function submitReview(input: ReviewInput): Promise<Review> {
     rating: input.rating,
     comment: input.comment.trim(),
     createdAt: new Date().toISOString(),
-    status: autoApproveSubmissions ? 'approved' : 'pending',
+    status: 'pending',
   };
 
   store = [review, ...store];
@@ -155,30 +173,42 @@ export async function submitReview(input: ReviewInput): Promise<Review> {
   return review;
 }
 
+function createId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `rev_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
 /* ------------------------------------------------------------------
-   Admin API — backs the prototype admin panel (/admin).
-   In a production app these calls would be authenticated and server-side
-   enforced; here they simply mutate the local store.
+   Admin API — requires the signed-in admin token (when API is on).
 ------------------------------------------------------------------- */
 
 /** Every review (all statuses) for the admin panel, newest first. */
 export async function listAllReviews(): Promise<Review[]> {
+  if (API_ENABLED) {
+    return request<Review[]>('/api/admin/reviews', { admin: true });
+  }
   await delay(LATENCY_MS);
   return [...store].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 /** Approve / reject / restore to pending. */
 export async function setReviewStatus(id: string, status: ReviewStatus): Promise<Review> {
-  await delay(LATENCY_MS / 2);
+  if (API_ENABLED) {
+    const updated = await request<Review>(
+      `/api/admin/reviews/${encodeURIComponent(id)}/status`,
+      { method: 'PATCH', body: { status }, admin: true },
+    );
+    notify();
+    return updated;
+  }
 
+  await delay(LATENCY_MS / 2);
   const existing = store.find((review) => review.id === id);
   if (!existing) throw new Error('That review no longer exists.');
-
   const updated: Review = { ...existing, status };
   store = store.map((review) => (review.id === id ? updated : review));
   writeStore(store);
   notify();
-
   return updated;
 }
 
@@ -187,8 +217,16 @@ export async function updateReview(
   id: string,
   patch: Partial<Pick<ReviewInput, 'rating' | 'comment'>>,
 ): Promise<Review> {
-  await delay(LATENCY_MS);
+  if (API_ENABLED) {
+    const updated = await request<Review>(
+      `/api/admin/reviews/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: patch, admin: true },
+    );
+    notify();
+    return updated;
+  }
 
+  await delay(LATENCY_MS);
   const existing = store.find((review) => review.id === id);
   if (!existing) throw new Error('That review no longer exists.');
 
@@ -208,24 +246,30 @@ export async function updateReview(
   store = store.map((review) => (review.id === id ? updated : review));
   writeStore(store);
   notify();
-
   return updated;
 }
 
 /** Permanently remove a review. */
 export async function deleteReview(id: string): Promise<void> {
-  await delay(LATENCY_MS / 2);
+  if (API_ENABLED) {
+    await request<void>(`/api/admin/reviews/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      admin: true,
+    });
+    notify();
+    return;
+  }
 
+  await delay(LATENCY_MS / 2);
   if (!store.some((review) => review.id === id)) {
     throw new Error('That review no longer exists.');
   }
-
   store = store.filter((review) => review.id !== id);
   writeStore(store);
   notify();
 }
 
-/** Test/dev helper — clears every locally submitted review. */
+/** Test/dev helper — clears locally mirrored reviews (offline mode only). */
 export function resetReviews(): void {
   store = [...seedReviews];
   writeStore(store);

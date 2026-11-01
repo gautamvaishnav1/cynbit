@@ -8,9 +8,13 @@ import { ReviewSectionSettings } from '../types';
  * (contract §3.5: "create defaults on first read if missing").
  */
 export async function getOrCreateSettings(): Promise<ReviewSettingsDoc> {
-  const existing = await ReviewSettings.findOne();
+  const existing = await ReviewSettings.findOne({});
   if (existing) return existing;
-  return ReviewSettings.create({});
+  return (await ReviewSettings.create({
+    productReviewsEnabled: true,
+    clientReviewsEnabled: true,
+    autoApproveSubmissions: false,
+  })) as ReviewSettingsDoc;
 }
 
 function toSettings(doc: ReviewSettingsDoc): ReviewSectionSettings {
@@ -41,7 +45,7 @@ export async function updateSettings(req: Request, res: Response): Promise<void>
   if (typeof patch.autoApproveSubmissions === 'boolean') {
     settings.autoApproveSubmissions = patch.autoApproveSubmissions;
   }
-  await settings.save();
+  await ReviewSettings.save(settings);
 
   res.status(200).json(toSettings(settings));
 }

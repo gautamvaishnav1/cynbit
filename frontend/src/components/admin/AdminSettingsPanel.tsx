@@ -6,6 +6,7 @@ import { useSettings } from '../../hooks/useSettings';
 import reviewService from '../../services/reviewService';
 import clientReviewService from '../../services/clientReviewService';
 import settingsService from '../../services/settingsService';
+import { API_ENABLED } from '../../services/apiClient';
 import Button from '../ui/Button';
 import { cn } from '../../utils/cn';
 
@@ -137,21 +138,33 @@ export function AdminSettingsPanel() {
       </section>
 
       <p aria-live="polite" className="min-h-5 text-[13px] font-bold text-brand-700">
-        {saving ? 'Saving…' : resetDone ? 'Prototype data reset.' : ''}
+        {saving ? 'Saving…' : resetDone ? (API_ENABLED ? 'Default settings restored.' : 'Prototype data reset.') : ''}
       </p>
 
       <section className="card overflow-hidden border-[#f3c2c6]">
         <header className="border-b border-[#f3c2c6] bg-[#fffafa] px-6 py-5">
-          <h3 className="font-display text-[17px] font-extrabold text-[#a32b34]">Reset prototype data</h3>
+          <h3 className="font-display text-[17px] font-extrabold text-[#a32b34]">
+            {API_ENABLED ? 'Restore default settings' : 'Reset prototype data'}
+          </h3>
           <p className="mt-1 max-w-2xl text-[13.5px] leading-relaxed text-[#a32b34]/90">
-            Deletes every locally stored product review and client review (all statuses) and
-            restores the default section settings. This cannot be undone, but nothing real is lost —
-            the prototype ships with empty datasets anyway.
+            {API_ENABLED ? (
+              <>
+                Restores the default section settings on the server (both sections visible,
+                moderation on). Reviews are stored in the database and managed individually in
+                the moderation tabs — nothing is deleted by this action.
+              </>
+            ) : (
+              <>
+                Deletes every locally stored product review and client review (all statuses) and
+                restores the default section settings. This cannot be undone, but nothing real is
+                lost — the prototype ships with empty datasets anyway.
+              </>
+            )}
           </p>
         </header>
         <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
           <p className="text-[13px] text-ink-mute">
-            Stored locally in this browser (localStorage).
+            {API_ENABLED ? 'Applied to the backend database.' : 'Stored locally in this browser (localStorage).'}
           </p>
           {resetArmed ? (
             <div className="flex items-center gap-3">

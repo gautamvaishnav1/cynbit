@@ -6,31 +6,34 @@ import type {
 } from '../types';
 import { seedClientReviews } from '../data/clientReviews';
 import { computeClientRatingSummary } from '../utils/rating';
-import { getSettingsSnapshot } from './settingsService';
+import { API_ENABLED, request } from './apiClient';
 
 /* ==================================================================
-   PROTOTYPE CLIENT-REVIEW SERVICE — NO BACKEND, NO DATABASE.
+   CLIENT-REVIEW SERVICE — REST-backed (JSON.md contract).
 
-   Real customer ratings & reviews of Cynbit Technologies (the company),
-   entered by the admin through the prototype admin panel. Isolated behind
-   an async interface so a future REST layer can replace it cleanly:
+   With VITE_API_BASE_URL configured:
 
-     getClientReviews()           <-  GET  /api/client-reviews?status=approved
-     listAllClientReviews()       <-  GET  /api/admin/client-reviews
-     createClientReview(input)    <-  POST /api/admin/client-reviews
-     updateClientReview(id,…)     <-  PATCH /api/admin/client-reviews/:id
-     setClientReviewStatus(id,…)  <-  PATCH /api/admin/client-reviews/:id/status
+     getClientReviews()           <-  GET    /api/client-reviews
+     getClientRatingSummary()     <-  GET    /api/client-reviews/summary
+     listAllClientReviews()       <-  GET    /api/admin/client-reviews
+     createClientReview(input)    <-  POST   /api/admin/client-reviews
+     updateClientReview(id,…)     <-  PATCH  /api/admin/client-reviews/:id
+     setClientReviewStatus(id,…)  <-  PATCH  /api/admin/client-reviews/:id/status
      deleteClientReview(id)       <-  DELETE /api/admin/client-reviews/:id
 
-   State lives in memory and is mirrored to localStorage so moderation
-   survives a refresh. Nothing is ever transmitted anywhere.
+   Without it, falls back to a localStorage mirror (offline demo mode).
    ================================================================== */
 
-const LATENCY_MS = 380;
 const STORAGE_KEY = 'cynbit.prototype.clientReviews.v1';
 
 export const MIN_CLIENT_REVIEW_LENGTH = 20;
 export const MAX_CLIENT_REVIEW_LENGTH = 600;
+
+const LATENCY_MS = API_ENABLED ? 0 : 260;
+
+/* ------------------------------------------------------------------
+   Local (offline/demo) fallback store.
+------------------------------------------------------------------- */
 
 function readStore(): ClientReview[] {
   try {
@@ -78,7 +81,7 @@ function createId(): string {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-/** Server-side-equivalent validation. Returned as user-facing messages. */
+/** Shared validation (mirrors server rules — the server decides). */
 export function validateClientReviewInput(input: ClientReviewInput): string[] {
   const errors: string[] = [];
 
@@ -112,40 +115,69 @@ export function validateClientReviewInput(input: ClientReviewInput): string[] {
   return errors;
 }
 
+/* ------------------------------------------------------------------
+   Public API
+------------------------------------------------------------------- */
+
 /** Approved client reviews for the public site, newest first. */
 export async function getClientReviews(): Promise<ClientReview[]> {
+  if (API_ENABLED) {
+    return request<ClientReview[]>('/api/client-reviews');
+  }
   await delay(LATENCY_MS);
   return store
     .filter((review) => review.status === 'approved')
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-/** Every client review (all statuses) for the admin panel, newest first. */
-export async function listAllClientReviews(): Promise<ClientReview[]> {
-  await delay(LATENCY_MS);
-  return [...store].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-}
-
 /** Aggregated roll-up of approved client reviews. Always zeroed when empty. */
 export async function getClientRatingSummary(): Promise<ClientRatingSummary> {
+  if (API_ENABLED) {
+    return request<ClientRatingSummary>('/api/client-reviews/summary');
+  }
   await delay(LATENCY_MS);
   return computeClientRatingSummary(store);
 }
 
+/* ------------------------------------------------------------------
+   Admin API
+------------------------------------------------------------------- */
+
+/** Every client review (all statuses) for the admin panel, newest first. */
+export async function listAllClientReviews(): Promise<ClientReview[]> {
+  if (API_ENABLED) {
+    return request<ClientReview[]>('/api/admin/client-reviews', { admin: true });
+  }
+  await delay(LATENCY_MS);
+  return [...store].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
 /**
- * Create a client review (admin panel).
- * Status mirrors the auto-approve setting, exactly like a backend would
- * decide server-side; without it the review waits for moderation.
+ * Create a client review (admin panel). The backend decides the initial
+ * status from `autoApproveSubmissions` — the client never sends status.
  */
 export async function createClientReview(input: ClientReviewInput): Promise<ClientReview> {
-  await delay(LATENCY_MS);
-
   const errors = validateClientReviewInput(input);
-  if (errors.length > 0) {
-    throw new Error(errors.join(' '));
+  if (errors.length > 0) throw new Error(errors.join(' '));
+
+  if (API_ENABLED) {
+    const body: Record<string, unknown> = {
+      clientName: input.clientName,
+      clientTitle: input.clientTitle,
+      rating: input.rating,
+      comment: input.comment,
+    };
+    if (input.source && input.source.trim()) body.source = input.source.trim();
+    const created = await request<ClientReview>('/api/admin/client-reviews', {
+      method: 'POST',
+      body,
+      admin: true,
+    });
+    notify();
+    return created;
   }
 
-  const { autoApproveSubmissions } = getSettingsSnapshot();
+  await delay(LATENCY_MS);
   const review: ClientReview = {
     id: createId(),
     clientName: input.clientName.trim(),
@@ -154,13 +186,11 @@ export async function createClientReview(input: ClientReviewInput): Promise<Clie
     comment: input.comment.trim(),
     ...(input.source && input.source.trim() ? { source: input.source.trim() } : {}),
     createdAt: new Date().toISOString(),
-    status: autoApproveSubmissions ? 'approved' : 'pending',
+    status: 'pending',
   };
-
   store = [review, ...store];
   writeStore(store);
   notify();
-
   return review;
 }
 
@@ -169,8 +199,22 @@ export async function updateClientReview(
   id: string,
   patch: Partial<ClientReviewInput>,
 ): Promise<ClientReview> {
-  await delay(LATENCY_MS);
+  if (API_ENABLED) {
+    const body: Record<string, unknown> = {};
+    if (patch.clientName !== undefined) body.clientName = patch.clientName;
+    if (patch.clientTitle !== undefined) body.clientTitle = patch.clientTitle;
+    if (patch.rating !== undefined) body.rating = patch.rating;
+    if (patch.comment !== undefined) body.comment = patch.comment;
+    if (patch.source !== undefined) body.source = patch.source;
+    const updated = await request<ClientReview>(
+      `/api/admin/client-reviews/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body, admin: true },
+    );
+    notify();
+    return updated;
+  }
 
+  await delay(LATENCY_MS);
   const existing = store.find((review) => review.id === id);
   if (!existing) throw new Error('That client review no longer exists.');
 
@@ -193,11 +237,9 @@ export async function updateClientReview(
     comment: merged.comment.trim(),
     ...(merged.source && merged.source.trim() ? { source: merged.source.trim() } : {}),
   };
-
   store = store.map((review) => (review.id === id ? updated : review));
   writeStore(store);
   notify();
-
   return updated;
 }
 
@@ -206,33 +248,46 @@ export async function setClientReviewStatus(
   id: string,
   status: ReviewStatus,
 ): Promise<ClientReview> {
-  await delay(LATENCY_MS / 2);
+  if (API_ENABLED) {
+    const updated = await request<ClientReview>(
+      `/api/admin/client-reviews/${encodeURIComponent(id)}/status`,
+      { method: 'PATCH', body: { status }, admin: true },
+    );
+    notify();
+    return updated;
+  }
 
+  await delay(LATENCY_MS / 2);
   const existing = store.find((review) => review.id === id);
   if (!existing) throw new Error('That client review no longer exists.');
-
   const updated: ClientReview = { ...existing, status };
   store = store.map((review) => (review.id === id ? updated : review));
   writeStore(store);
   notify();
-
   return updated;
 }
 
 /** Permanently remove a client review. */
 export async function deleteClientReview(id: string): Promise<void> {
-  await delay(LATENCY_MS / 2);
+  if (API_ENABLED) {
+    await request<void>(`/api/admin/client-reviews/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      admin: true,
+    });
+    notify();
+    return;
+  }
 
+  await delay(LATENCY_MS / 2);
   if (!store.some((review) => review.id === id)) {
     throw new Error('That client review no longer exists.');
   }
-
   store = store.filter((review) => review.id !== id);
   writeStore(store);
   notify();
 }
 
-/** Test/dev helper — clears every locally stored client review. */
+/** Test/dev helper — clears locally mirrored client reviews (offline mode). */
 export function resetClientReviews(): void {
   store = [...seedClientReviews];
   writeStore(store);
