@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, type ReactNode, type MouseEvent } from 'react
 import { createPortal } from 'react-dom';
 import { Info, X } from 'lucide-react';
 
+import { API_ENABLED } from '../../services/apiClient';
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 

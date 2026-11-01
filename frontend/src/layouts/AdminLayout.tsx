@@ -8,12 +8,14 @@ import { ReviewsProvider } from '../hooks/useReviews';
 import { ClientReviewsProvider } from '../hooks/useClientReviews';
 import { SettingsProvider } from '../hooks/useSettings';
 import { useAdminSession } from '../hooks/useAdminSession';
+import { API_ENABLED } from '../services/apiClient';
 
 /**
  * Admin shell with its own chrome (no marketing header/footer).
  *
- * The sign-in screen is a DEMO GATE only — this prototype has no backend
- * and performs no real authentication or authorisation.
+ * With VITE_API_BASE_URL configured the sign-in screen authenticates
+ * against the backend (JWT). Without it, the sign-in screen is a DEMO
+ * GATE only — no real authentication or authorisation.
  */
 export default function AdminLayout() {
   const { signedIn, signedInAs, signOut } = useAdminSession();
@@ -81,9 +83,19 @@ export default function AdminLayout() {
 
               <footer className="mx-auto max-w-[1240px] px-5 pt-2 pb-10 sm:px-8">
                 <p className="border-t border-line pt-6 text-[12.5px] leading-relaxed text-ink-mute">
-                  Prototype admin panel — data is stored in this browser only (localStorage).
-                  There is no backend, database or real authentication; do not enter real personal
-                  data.
+                  {API_ENABLED ? (
+                    <>
+                      Connected to the Cynbit backend — reviews and settings are stored in the
+                      server database. Sign-in is verified by the API; sessions expire after 7
+                      days.
+                    </>
+                  ) : (
+                    <>
+                      Prototype admin panel — data is stored in this browser only (localStorage).
+                      There is no backend, database or real authentication; do not enter real
+                      personal data.
+                    </>
+                  )}
                 </p>
               </footer>
             </div>
