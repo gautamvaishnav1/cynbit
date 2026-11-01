@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Loader2 } from 'lucide-react';
 import type { ProductId, ReviewInput } from '../../types';
 import { products } from '../../data/products';
 import { MAX_REVIEW_LENGTH, MIN_REVIEW_LENGTH } from '../../services/reviewService';
+import { API_ENABLED } from '../../services/apiClient';
 import { useSettings } from '../../hooks/useSettings';
 import StarRating from './StarRating';
 import Button from '../ui/Button';
@@ -158,8 +159,12 @@ export function ReviewForm({ defaultProductId, submitting, onSubmit, onCancel }:
         </h3>
         <p className="mx-auto mt-2.5 max-w-md text-[14.5px] leading-relaxed text-ink-soft">
           {settings.autoApproveSubmissions
-            ? 'Your review is now published on this page so you can see the rating summary, distribution and sorting update. This is a front-end prototype — nothing was sent to a server or database.'
-            : 'Your review has been recorded and is awaiting approval. An administrator must approve it from the Review Admin panel before it appears publicly. This is a front-end prototype — nothing was sent to a server or database.'}
+            ? API_ENABLED
+              ? 'Your review was submitted to the backend and is now published on this page — the rating summary, distribution and sorting update live from server data.'
+              : 'Your review is now published on this page so you can see the rating summary, distribution and sorting update. This is a front-end prototype — nothing was sent to a server or database.'
+            : API_ENABLED
+              ? 'Your review was submitted to the backend and is awaiting approval. An administrator must approve it in the admin panel before it appears publicly.'
+              : 'Your review has been recorded and is awaiting approval. An administrator must approve it from the Review Admin panel before it appears publicly. This is a front-end prototype — nothing was sent to a server or database.'}
         </p>
         <div className="mt-6 flex justify-center gap-3">
           <Button onClick={onCancel}>Done</Button>

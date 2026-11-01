@@ -126,10 +126,22 @@ export function ReviewModal({ open, onClose, title, subtitle, children }: Review
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-sand-300 bg-sand-100 px-4 py-3.5">
             <Info size={17} className="mt-0.5 shrink-0 text-sand-700" />
             <p className="text-[13px] leading-relaxed text-sand-700">
-              <strong className="font-extrabold">Prototype demonstration.</strong> This form has no
-              backend. Submitted reviews are kept in this browser only — they are not sent to a
-              server, database or Cynbit — and appear publicly only after approval in the prototype
-              admin panel (unless auto-approve is enabled). No real customer testimonials are shown.
+              {API_ENABLED ? (
+                <>
+                  <strong className="font-extrabold">Sent to the backend.</strong> Your review is
+                  submitted to the Cynbit review API and stored server-side. It appears publicly
+                  only after approval in the admin panel (unless auto-approve is enabled), and
+                  your email is never shown publicly. No pre-filled or fake testimonials are used.
+                </>
+              ) : (
+                <>
+                  <strong className="font-extrabold">Prototype demonstration.</strong> This form
+                  has no backend. Submitted reviews are kept in this browser only — they are not
+                  sent to a server, database or Cynbit — and appear publicly only after approval
+                  in the prototype admin panel (unless auto-approve is enabled). No real customer
+                  testimonials are shown.
+                </>
+              )}
             </p>
           </div>
 
