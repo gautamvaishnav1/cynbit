@@ -6,6 +6,18 @@ import { logger } from '../utils/logger';
 export let isDBConnected = false;
 
 /**
+ * Mask credentials in a MongoDB URI for safe logging.
+ * e.g. mongodb://user:pass@host:27017/db -> mongodb://user:***@host:27017/db
+ */
+function maskMongoUri(uri: string): string {
+  try {
+    return uri.replace(/(:\/\/[^:]+):[^@]+@/, '$1:***@');
+  } catch {
+    return '[invalid URI]';
+  }
+}
+
+/**
  * Connect to MongoDB using MONGODB_URI from the .env file.
  * Retries with exponential backoff so a temporary network blip
  * does not take the whole server down.
@@ -19,41 +31,61 @@ export async function connectWithRetry(
 ): Promise<void> {
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
-    logger.error('MONGODB_URI is missing. Copy .env.example to .env and set it.');
+    logger.error(
+      '[DB] MONGODB_URI is missing. Copy .env.example to .env and set it.',
+    );
     return;
   }
+
+  logger.info(
+    `[DB] Starting MongoDB connection to ${maskMongoUri(mongoUri)}`,
+  );
 
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     try {
+      logger.info(
+        `[DB] Connection attempt ${attempt}/${maxRetries} (timeout 10s)...`,
+      );
+
       await mongoose.connect(mongoUri, {
         serverSelectionTimeoutMS: 10000,
         connectTimeoutMS: 10000,
         socketTimeoutMS: 45000,
       });
+
       isDBConnected = true;
-      logger.info(`MongoDB connected: ${mongoose.connection.name}`);
+      logger.info(
+        `[DB] MongoDB connected successfully: ${mongoose.connection.name}`,
+      );
       return;
     } catch (error) {
       lastError = error;
+      const errMsg =
+        error instanceof Error ? error.message : String(error);
+      const errName =
+        error instanceof Error ? error.name : 'UnknownError';
+
       logger.warn(
-        `MongoDB connection attempt ${attempt}/${maxRetries} failed: ${(error as Error).message}`,
+        `[DB] Connection attempt ${attempt}/${maxRetries} failed — ${errName}: ${errMsg}`,
       );
 
       if (attempt < maxRetries) {
         const delayMs = baseDelayMs * attempt;
-        logger.info(`Retrying MongoDB connection in ${delayMs}ms...`);
+        logger.info(
+          `[DB] Retrying MongoDB connection in ${delayMs}ms (${attempt}/${maxRetries})...`,
+        );
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
   }
 
   isDBConnected = false;
+  const lastErrMsg =
+    lastError instanceof Error ? lastError.message : String(lastError);
   logger.error(
-    `MongoDB connection failed after ${maxRetries} attempts. Last error: ${
-      lastError as Error
-    }`,
+    `[DB] MongoDB connection failed after ${maxRetries} attempts. Last error: ${lastErrMsg}`,
   );
   /* Do not throw — keep the HTTP server running so health checks still work.
      Routes will return 503 until MongoDB is reachable. */
@@ -62,17 +94,20 @@ export async function connectWithRetry(
 /* Log unexpected connection drops instead of crashing silently. */
 mongoose.connection.on('error', (error: Error) => {
   isDBConnected = false;
-  logger.error('MongoDB connection error', error);
+  logger.error(
+    `[DB] MongoDB connection error — ${error.name}: ${error.message}`,
+    error,
+  );
 });
 
 /* Log reconnections for ops monitoring. */
 mongoose.connection.on('reconnected', () => {
   isDBConnected = true;
-  logger.info('MongoDB reconnected.');
+  logger.info('[DB] MongoDB reconnected.');
 });
 
 /* When the connection is lost, mark DB as disconnected so routes can respond 503. */
 mongoose.connection.on('disconnected', () => {
   isDBConnected = false;
-  logger.warn('MongoDB disconnected.');
+  logger.warn('[DB] MongoDB disconnected.');
 });
