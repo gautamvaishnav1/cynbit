@@ -45,7 +45,7 @@ The **Products page** includes a reviews experience for each of the three produc
 
 - The shipped seed data contains **zero reviews** (both product reviews and client reviews). Every count, average and distribution is computed from actual data — nothing is fabricated.
 - Average rating, total count, the 5→1 star distribution and every list are derived from the review collection at runtime (empty states are shown until the first review is approved).
-- Any reviews submitted or entered in the running app are stored by the **backend** (`../Backend`, JSON file storage) when `VITE_API_BASE_URL` is set in `frontend/.env`; without it, the app falls back to **in-memory + `localStorage`** prototype data. Nothing is fabricated either way.
+- Any reviews submitted or entered in the running app are stored by the **backend** (`../Backend`, Mongoose + MongoDB) when `VITE_API_BASE_URL` is set in `frontend/.env`; without it, the app falls back to **in-memory + `localStorage`** prototype data. Nothing is fabricated either way.
 - The two public testimonials shown on the Home page are Cynbit's own published quotes; no star ratings are attached to them, because no real ratings exist.
 
 ### Moderation flow (admin → public)
@@ -114,7 +114,7 @@ src/
 
 ## Backend integration (done — dual-mode)
 
-Every data operation is isolated behind three services with async APIs. **They are already wired to the real backend** (`../Backend`, Express 5 + JSON file storage) via the shared fetch wrapper `src/services/apiClient.ts` when `VITE_API_BASE_URL` is set (e.g. `http://localhost:4000` in `frontend/.env`); without it, the same functions fall back to a `localStorage` mirror so the prototype runs offline:
+Every data operation is isolated behind three services with async APIs. **They are already wired to the real backend** (`../Backend`, Express 5 + Mongoose/MongoDB) via the shared fetch wrapper `src/services/apiClient.ts` when `VITE_API_BASE_URL` is set (e.g. `http://localhost:4000` in `frontend/.env`); without it, the same functions fall back to a `localStorage` mirror so the prototype runs offline:
 
 ```ts
 // reviewService.ts
@@ -139,7 +139,7 @@ getSettings()                 // GET    /api/review-settings   (public — secti
 updateSettings(patch)         // PATCH  /api/admin/review-settings  (Bearer token)
 ```
 
-Run it: `cd ../Backend && npm install && npm run build && npm run seed && node dist/server.js`, then `npm run dev` in this folder. Admin credentials: `admin@cynbit.in` / `Admin@12345`.
+Run it: start MongoDB (`mongod`) with `MONGODB_URI` set in `../Backend/.env`, then `cd ../Backend && npm install && npm run build && npm run seed && node dist/server.js`, and `npm run dev` in this folder. Admin credentials: `admin@cynbit.in` / `Admin@12345`.
 
 To drop the offline fallback entirely: delete the `localStorage` mirrors and seed files (`src/data/reviews.ts`, `src/data/clientReviews.ts`) once the backend is always available. Moderation statuses already flow end-to-end: submissions default to `pending` (or the server's `autoApproveSubmissions` decides) and only `approved` reviews reach the public queries.
 
@@ -165,5 +165,5 @@ The build is production-ready. Hardening in place:
 
 1. Replace the `cynbit-prototype.example.com` placeholder domain in `index.html`, `public/robots.txt` and `public/sitemap.xml` with the real deployment domain.
 2. Add a real `public/og-image.png` (1200×630) — social scrapers don't reliably support SVG.
-3. Deploy the backend (`../Backend`) and point `VITE_API_BASE_URL` at it; consider swapping the JSON-file storage for a real database and adding httpOnly cookies + login rate limiting.
+3. Deploy the backend (`../Backend`) against a managed MongoDB (Atlas or a proper `mongod` service), point `VITE_API_BASE_URL` at it, and consider httpOnly cookies for the admin session.
 4. `npm run build` then serve `dist/` (or use your host's Vite/SPA preset).

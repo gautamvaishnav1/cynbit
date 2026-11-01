@@ -173,16 +173,16 @@ AdminPage JS                 —  → 32.33 kB    (lazy)
 
 ## 4b. Backend integration pass (latest)
 
-The prototype is now **wired to the real backend** (`../Backend` — Express 5 + JSON file storage; MongoDB is not required). `VITE_API_BASE_URL=http://localhost:4000` in `frontend/.env` turns on real mode; removing it returns the app to pure-offline demo mode. Everything below was verified end-to-end (API smoke tests + in-browser flows) with **0 console errors**.
+The prototype is now **wired to the real backend** (`../Backend` — Express 5 + **Mongoose/MongoDB**; `MONGODB_URI` in `Backend/.env`, default `mongodb://127.0.0.1:27017/cynbit`). `VITE_API_BASE_URL=http://localhost:4000` in `frontend/.env` turns on real mode; removing it returns the app to pure-offline demo mode. Everything below was verified end-to-end against MongoDB (API smoke tests + in-browser flows) with **0 console errors**.
 
 | # | Change | Files |
 | --- | --- | --- |
-| 1 | Backend converted from MongoDB to **JSON file storage** (`Backend/data/*.json`) so it runs with no DB install. `Collection<T>` layer with `find/save/deleteOne`; all controllers de-chained (no Mongo query chaining); `createdAt` passed explicitly to `create()`. | `Backend/src/storage.ts` (new), all models, controllers, `db.ts`, `seedAdmin.ts`, `errorMiddleware.ts` |
+| 1 | Backend persisted in **MongoDB via Mongoose**: schemas with validation/trim/enums, compound indexes, `requireDB()` → 503 when the DB is down, rate-limited public submissions, idempotent admin seed (`npm run seed` reads `ADMIN_EMAIL`/`ADMIN_PASSWORD` from `.env`). | all `Backend/src/models/*`, `config/db.ts`, `scripts/seedAdmin.ts`, controllers, `middleware/rateLimitMiddleware.ts` |
 | 2 | Shared fetch wrapper with `API_ENABLED` flag, Bearer-token handling and API-envelope error parsing. | `src/services/apiClient.ts` (new) |
 | 3 | Review, client-review and settings services call the real REST endpoints (JSON.md contract) when API mode is on; `localStorage` mirror kept as offline fallback. Contexts re-fetch after every mutation. | `src/services/reviewService.ts`, `clientReviewService.ts`, `settingsService.ts` |
 | 4 | Admin sign-in authenticates for real: `POST /api/admin/auth/login` → JWT stored → attached to all `/api/admin/*` calls. Seeded admin (`npm run seed`): `admin@cynbit.in` / `Admin@12345`. Sign-in UI shows API errors and swaps copy between "Backend sign-in" and "Demo gate only". | `src/hooks/useAdminSession.ts`, `src/components/admin/AdminSignIn.tsx` |
 | 5 | **Bug fix:** public pages fetched the admin-only `/api/admin/review-settings` → 401 console noise. Added public `GET /api/review-settings` on the backend; the frontend settings service uses it. Admin route remains protected (401 without token). | `Backend/src/routes/settingsRoutes.ts`, `Backend/src/app.ts`, `src/services/settingsService.ts` |
-| 6 | **Bug fix:** admin lists returned 500 after data round-tripped through JSON (`createdAt.getTime is not a function` — dates reload as strings). All controller sorts/serializers now accept `Date | string`. | `Backend/src/controllers/reviewController.ts`, `clientReviewController.ts`, `formController.ts` |
+| 6 | Hardening (backend): single-`FRONTEND_URL` CORS, `trust proxy`, 100 KB JSON body limit, JWT-secret validation, graceful shutdown, 404s for unknown/deleted ids on every PATCH/DELETE. | `Backend/src/app.ts`, `server.ts`, controllers |
 | 7 | Honest prototype copy is now API-aware (`API_ENABLED` conditionals): review dialog, review-form success text, admin footer, sign-in gate, settings "restore defaults" card. | `src/components/review/ReviewModal.tsx`, `ReviewForm.tsx`, `src/layouts/AdminLayout.tsx`, `src/components/admin/AdminSignIn.tsx`, `AdminSettingsPanel.tsx` |
 
 ### Verification (API + browser)
@@ -271,12 +271,17 @@ utils/         cn, rating
 ## 8. Commands
 
 ```bash
+# MongoDB — required by the backend (MONGODB_URI in Backend/.env)
+mongod --dbpath <data-dir> --logpath <mongod.log> --bind_ip 127.0.0.1 --port 27017
+#   (on this machine: MongoDB 9.0.4 ZIP at %LOCALAPPDATA%\mongodb — installed
+#    without admin rights; run as a Windows service or use Atlas in production)
+
 # Backend (../Backend) — required for real mode
 cd ../Backend
 npm install          # install deps
 npm run build        # compile TypeScript → dist/
 npm run seed         # create the admin account (admin@cynbit.in / Admin@12345)
-node dist/server.js  # API on http://localhost:4000 (data in Backend/data/*.json)
+node dist/server.js  # API on http://localhost:4000 (persists to MongoDB)
 
 # Frontend
 npm install       # install deps
@@ -297,7 +302,7 @@ These do **not** block a static deploy but must be addressed for a real launch (
 2. **OG image** — `og:image` points to `/og-image.png`, which is not yet added. Provide a real **1200×630 PNG** (social scrapers don't reliably support SVG) or update the URL.
 3. ~~**Backend** — wire the REST API per `JSON.md`~~ **Done** — services call the real API when `VITE_API_BASE_URL` is set; the `localStorage` mirror remains only as an offline fallback (delete it once the backend is always available).
 4. ~~**Real auth** — replace the demo `useAdminSession` gate~~ **Done** — sign-in issues a backend JWT (7-day expiry) and every `/api/admin/*` route enforces it (401 without token). Consider httpOnly cookies + rate limiting for production hardening.
-5. **Backend storage** — currently JSON files (`Backend/data/`), ideal for demos/evaluation. Swap `Backend/src/storage.ts` for MongoDB/Postgres before handling real user data; keep `npm run seed` for the admin account.
+5. **Backend storage** — now **MongoDB via Mongoose** (schemas, indexes, validation). Locally `mongod` runs as a plain user process (won't survive reboot); for production use a Windows service, Docker, or MongoDB Atlas, and set `MONGODB_URI` accordingly. Keep `npm run seed` for the admin account.
 
 ---
 
