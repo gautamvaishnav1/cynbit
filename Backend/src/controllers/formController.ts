@@ -8,14 +8,28 @@ import {
   DemoRequestInput,
   NewsletterInput,
 } from '../types';
+import { isDBConnected } from '../config/db';
+import { ApiError } from '../utils/ApiError';
 
-/** ISO timestamp for a date that may have round-tripped through JSON (string). */
+/** ISO timestamp for a date. */
 function toIso(value: Date): string {
   return value.toISOString();
 }
 
+/** 503 when MongoDB is not reachable. */
+function requireDB(): void {
+  if (!isDBConnected) {
+    throw new ApiError(
+      503,
+      'INTERNAL',
+      'Database is temporarily unavailable. Please try again later.',
+    );
+  }
+}
+
 /** POST /api/demo-requests (contract §2.5). */
 export async function createDemoRequest(req: Request, res: Response): Promise<void> {
+  requireDB();
   const input = req.body as DemoRequestInput;
 
   const request = await DemoRequest.create({
@@ -34,6 +48,7 @@ export async function createDemoRequest(req: Request, res: Response): Promise<vo
 
 /** POST /api/contact-inquiries (contract §2.5). */
 export async function createContactInquiry(req: Request, res: Response): Promise<void> {
+  requireDB();
   const input = req.body as ContactInquiryInput;
 
   const inquiry = await ContactInquiry.create({
@@ -52,6 +67,7 @@ export async function createContactInquiry(req: Request, res: Response): Promise
 
 /** POST /api/newsletter/subscriptions — duplicate email answers 409 (contract §2.5). */
 export async function subscribeNewsletter(req: Request, res: Response): Promise<void> {
+  requireDB();
   const input = req.body as NewsletterInput;
 
   try {

@@ -4,6 +4,7 @@ import { Request, Response } from 'express';
 import { ApiError } from '../utils/ApiError';
 import { generateAdminToken } from '../utils/generateToken';
 import { logger } from '../utils/logger';
+import { isDBConnected } from '../config/db';
 import { LoginInput, LoginResponse } from '../types';
 import { Admin } from '../models/Admin';
 
@@ -13,6 +14,7 @@ import { Admin } from '../models/Admin';
  * so the response never reveals which accounts exist.
  */
 export async function login(req: Request, res: Response): Promise<void> {
+  requireDB();
   const input = req.body as LoginInput;
   const email = input.email.trim().toLowerCase();
 
@@ -33,4 +35,15 @@ export async function login(req: Request, res: Response): Promise<void> {
 
   const response: LoginResponse = { token, user: { email: admin.email } };
   res.status(200).json(response);
+}
+
+/** 503 when MongoDB is not reachable. */
+function requireDB(): void {
+  if (!isDBConnected) {
+    throw new ApiError(
+      503,
+      'INTERNAL',
+      'Database is temporarily unavailable. Please try again later.',
+    );
+  }
 }

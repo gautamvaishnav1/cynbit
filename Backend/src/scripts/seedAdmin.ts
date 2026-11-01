@@ -3,7 +3,7 @@ import 'dotenv/config';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
 
-import { connectDB } from '../config/db';
+import { connectWithRetry } from '../config/db';
 import { logger } from '../utils/logger';
 import { Admin } from '../models/Admin';
 
@@ -25,7 +25,7 @@ async function seedAdmin(): Promise<void> {
     process.exit(1);
   }
 
-  await connectDB();
+  await connectWithRetry(10, 3000); /* More retries for the seed script */
 
   const passwordHash = await bcrypt.hash(password, 10);
   const existing = await Admin.findOne({ email });

@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { getOrCreateSettings } from './settingsController';
 import { computeSummary } from '../utils/rating';
 import { ApiError } from '../utils/ApiError';
+import { isDBConnected } from '../config/db';
 import { isUuid } from '../types';
 import { ClientReview, ClientReviewDoc } from '../models/ClientReview';
 import {
@@ -37,12 +38,24 @@ function toClientReview(doc: ClientReviewDoc): ClientReviewView {
   };
 }
 
+/** 503 when MongoDB is not reachable. */
+function requireDB(): void {
+  if (!isDBConnected) {
+    throw new ApiError(
+      503,
+      'INTERNAL',
+      'Database is temporarily unavailable. Please try again later.',
+    );
+  }
+}
+
 /* ------------------------------------------------------------------
    Public client review endpoints (contract §3.3).
 ------------------------------------------------------------------- */
 
 /** GET /api/client-reviews — approved only, newest first. */
 export async function getClientReviews(_req: Request, res: Response): Promise<void> {
+  requireDB();
   const reviews = await ClientReview.find({ status: 'approved' }).sort({
     createdAt: -1,
   });
@@ -51,6 +64,7 @@ export async function getClientReviews(_req: Request, res: Response): Promise<vo
 
 /** GET /api/client-reviews/summary — zeroed when empty. */
 export async function getClientSummary(_req: Request, res: Response): Promise<void> {
+  requireDB();
   const docs = await ClientReview.find({ status: 'approved' }).select('rating');
   const summary: ClientRatingSummary = computeSummary(docs.map((doc) => doc.rating));
   res.status(200).json(summary);
@@ -62,12 +76,14 @@ export async function getClientSummary(_req: Request, res: Response): Promise<vo
 
 /** GET /api/admin/client-reviews — all statuses, newest first. */
 export async function listAllClientReviews(_req: Request, res: Response): Promise<void> {
+  requireDB();
   const reviews = await ClientReview.find().sort({ createdAt: -1 });
   res.status(200).json(reviews.map(toClientReview));
 }
 
 /** POST /api/admin/client-reviews — status follows autoApproveSubmissions. */
 export async function createClientReview(req: Request, res: Response): Promise<void> {
+  requireDB();
   const input = req.body as ClientReviewInput;
   const settings = await getOrCreateSettings();
 
@@ -85,6 +101,7 @@ export async function createClientReview(req: Request, res: Response): Promise<v
 
 /** PATCH /api/admin/client-reviews/:id — partial edit of any subset of fields. */
 export async function updateClientReview(req: Request, res: Response): Promise<void> {
+  requireDB();
   const patch = req.body as Partial<ClientReviewInput>;
   const review = await findClientReviewOr404(req.params.id);
 
@@ -103,6 +120,7 @@ export async function updateClientReview(req: Request, res: Response): Promise<v
 
 /** PATCH /api/admin/client-reviews/:id/status */
 export async function setClientReviewStatus(req: Request, res: Response): Promise<void> {
+  requireDB();
   const review = await findClientReviewOr404(req.params.id);
   const { status } = req.body as ReviewStatusUpdate;
 
@@ -114,6 +132,7 @@ export async function setClientReviewStatus(req: Request, res: Response): Promis
 
 /** DELETE /api/admin/client-reviews/:id — hard delete. */
 export async function deleteClientReview(req: Request, res: Response): Promise<void> {
+  requireDB();
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   await findClientReviewOr404(id); // verify exists (throws 404 if not)
   await ClientReview.deleteOne({ _id: id });

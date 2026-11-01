@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { getOrCreateSettings } from './settingsController';
 import { computeSummary } from '../utils/rating';
 import { ApiError } from '../utils/ApiError';
+import { isDBConnected } from '../config/db';
 import { isProductId, isReviewStatus, isUuid, ProductId, RatingSummary, ReviewStatus } from '../types';
 import { Review, ReviewDoc } from '../models/Review';
 
@@ -66,12 +67,24 @@ function toAdminReview(doc: ReviewDoc): AdminReview {
   return { ...toPublicReview(doc), email: doc.email };
 }
 
+/** 503 when MongoDB is not reachable. */
+function requireDB(): void {
+  if (!isDBConnected) {
+    throw new ApiError(
+      503,
+      'INTERNAL',
+      'Database is temporarily unavailable. Please try again later.',
+    );
+  }
+}
+
 /* ------------------------------------------------------------------
    Public product review endpoints (contract §3.1).
 ------------------------------------------------------------------- */
 
 /** GET /api/products/:productId/reviews — approved only, newest first. */
 export async function getReviews(req: Request, res: Response): Promise<void> {
+  requireDB();
   const productId = findProductOr404(req.params.productId);
   const reviews = await Review.find({ productId, status: 'approved' }).sort({
     createdAt: -1,
@@ -81,6 +94,7 @@ export async function getReviews(req: Request, res: Response): Promise<void> {
 
 /** GET /api/products/:productId/reviews/summary — zeroed when empty. */
 export async function getSummary(req: Request, res: Response): Promise<void> {
+  requireDB();
   const productId = findProductOr404(req.params.productId);
   const docs = await Review.find({ productId, status: 'approved' }).select('rating');
   const summary = computeSummary(docs.map((doc) => doc.rating));
@@ -93,6 +107,7 @@ export async function getSummary(req: Request, res: Response): Promise<void> {
  * never taken from the request body.
  */
 export async function submitReview(req: Request, res: Response): Promise<void> {
+  requireDB();
   const productId = findProductOr404(req.params.productId);
   const input = req.body as { customerName: string; email: string; rating: number; comment: string };
 
@@ -120,6 +135,7 @@ export async function submitReview(req: Request, res: Response): Promise<void> {
 
 /** GET /api/admin/reviews — all statuses, optional ?status= & ?productId=. */
 export async function listAllReviews(req: Request, res: Response): Promise<void> {
+  requireDB();
   const filter: Record<string, string> = {};
   if (typeof req.query.status === 'string' && isReviewStatus(req.query.status)) {
     filter.status = req.query.status;
@@ -134,6 +150,7 @@ export async function listAllReviews(req: Request, res: Response): Promise<void>
 
 /** PATCH /api/admin/reviews/:id/status */
 export async function setReviewStatus(req: Request, res: Response): Promise<void> {
+  requireDB();
   const review = await findReviewOr404(req.params.id);
   const { status } = req.body as ReviewStatusUpdate;
 
@@ -145,6 +162,7 @@ export async function setReviewStatus(req: Request, res: Response): Promise<void
 
 /** PATCH /api/admin/reviews/:id — edit rating and/or comment. */
 export async function updateReview(req: Request, res: Response): Promise<void> {
+  requireDB();
   const patch = req.body as { rating?: number; comment?: string };
   const review = await findReviewOr404(req.params.id);
 
@@ -157,6 +175,7 @@ export async function updateReview(req: Request, res: Response): Promise<void> {
 
 /** DELETE /api/admin/reviews/:id — hard delete. */
 export async function deleteReview(req: Request, res: Response): Promise<void> {
+  requireDB();
   const id = readParam(req.params.id);
   await findReviewOr404(id); // verify exists (throws 404 if not)
   await Review.deleteOne({ _id: id });

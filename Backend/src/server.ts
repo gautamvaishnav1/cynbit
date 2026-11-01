@@ -1,10 +1,10 @@
 import 'dotenv/config';
 
 import app from './app';
-import { connectDB } from './config/db';
+import { connectWithRetry, isDBConnected } from './config/db';
 import { logger } from './utils/logger';
 
-const REQUIRED_ENV_VARS = ['MONGODB_URI', 'JWT_SECRET'] as const;
+const REQUIRED_ENV_VARS = ['JWT_SECRET'] as const;
 const JWT_SECRET_MIN_LENGTH = 16;
 
 function reportMissingEnvVars(): void {
@@ -43,10 +43,15 @@ async function startServer(): Promise<void> {
   validateJwtSecret();
 
   try {
-    await connectDB();
     const port = readPort();
+    /* Start the HTTP server FIRST so health checks respond even if
+       MongoDB is temporarily unreachable. DB connects in background. */
     server = app.listen(port, () => {
       logger.info(`Server running at http://localhost:${port}`);
+      /* Kick off DB connection without blocking the server. */
+      connectWithRetry().catch((error) => {
+        logger.error('MongoDB background connection failed', error);
+      });
     });
   } catch (error) {
     logger.error('Server failed to start', error);
@@ -88,3 +93,5 @@ process.on('unhandledRejection', (reason: unknown) => {
 });
 
 startServer();
+
+export { isDBConnected };

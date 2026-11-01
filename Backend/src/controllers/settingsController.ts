@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 
 import { ReviewSettings, ReviewSettingsDoc } from '../models/ReviewSettings';
 import { ReviewSectionSettings } from '../types';
+import { isDBConnected } from '../config/db';
+import { ApiError } from '../utils/ApiError';
 
 /**
  * Returns the singleton settings row, creating the defaults on first use
@@ -26,14 +28,27 @@ function toSettings(doc: ReviewSettingsDoc): ReviewSectionSettings {
   };
 }
 
+/** 503 when MongoDB is not reachable. */
+function requireDB(): void {
+  if (!isDBConnected) {
+    throw new ApiError(
+      503,
+      'INTERNAL',
+      'Database is temporarily unavailable. Please try again later.',
+    );
+  }
+}
+
 /** GET /api/admin/review-settings */
 export async function getSettings(_req: Request, res: Response): Promise<void> {
+  requireDB();
   const settings = await getOrCreateSettings();
   res.status(200).json(toSettings(settings));
 }
 
 /** PATCH /api/admin/review-settings — accepts any subset of the three flags. */
 export async function updateSettings(req: Request, res: Response): Promise<void> {
+  requireDB();
   const patch = req.body as Partial<ReviewSectionSettings>;
   const settings = await getOrCreateSettings();
 
