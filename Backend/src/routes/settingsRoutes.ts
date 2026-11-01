@@ -34,7 +34,14 @@ const updateValidators = [
     .toBoolean(),
 ];
 
+/* Public settings read (contract §3.5 note): public pages need to know which
+   sections to render. Same payload, no secrets. */
+export const publicSettingsRoutes = Router();
+
 /* GET / PATCH /api/admin/review-settings (contract §3.5). */
 adminSettingsRoutes.use(requireAdmin);
 adminSettingsRoutes.get('/', settingsController.getSettings);
 adminSettingsRoutes.patch('/', updateValidators, validateRequest, settingsController.updateSettings);
+
+/* GET /api/review-settings — unauthenticated visibility read. */
+publicSettingsRoutes.get('/', settingsController.getSettings);

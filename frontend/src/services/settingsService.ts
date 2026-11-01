@@ -85,13 +85,10 @@ function cacheSettings(next: ReviewSectionSettings): ReviewSectionSettings {
   return { ...next };
 }
 
-/** Current settings (async — mirrors GET /api/admin/review-settings). */
+/** Current settings (async — GET /api/review-settings, public read). */
 export async function getSettings(): Promise<ReviewSectionSettings> {
   if (API_ENABLED) {
-    const server = await request<ReviewSectionSettings>(
-      '/api/admin/review-settings',
-      { admin: true },
-    );
+    const server = await request<ReviewSectionSettings>('/api/review-settings');
     return cacheSettings(server);
   }
 

@@ -6,7 +6,7 @@ import { adminAuthRoutes } from './routes/adminRoutes';
 import { formRoutes } from './routes/formRoutes';
 import { publicClientReviewRoutes, adminClientReviewRoutes } from './routes/clientReviewRoutes';
 import { publicReviewRoutes, adminReviewRoutes } from './routes/reviewRoutes';
-import { adminSettingsRoutes } from './routes/settingsRoutes';
+import { adminSettingsRoutes, publicSettingsRoutes } from './routes/settingsRoutes';
 
 const app = express();
 
@@ -45,6 +45,7 @@ app.use('/api', formRoutes);
 /* Public review endpoints. */
 app.use('/api/products', publicReviewRoutes);
 app.use('/api/client-reviews', publicClientReviewRoutes);
+app.use('/api/review-settings', publicSettingsRoutes);
 
 /* Admin endpoints (all except login require a valid admin JWT). */
 app.use('/api/admin/auth', adminAuthRoutes);
