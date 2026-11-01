@@ -3,7 +3,7 @@
 **Audience:** backend engineer joining this project.
 **Purpose:** every piece of data the React frontend (`cynbit-frontend`) uses, the exact JSON shapes it expects, and the REST API the frontend is already written against.
 
-> **Current state of the frontend:** all data operations are isolated behind three service modules (`src/services/reviewService.ts`, `src/services/clientReviewService.ts`, `src/services/settingsService.ts`). Today they read/write `localStorage` and simulate latency. Each function is annotated with the REST call it mirrors. **No seed data ships** — every review dataset is intentionally empty (`src/data/reviews.ts`, `src/data/clientReviews.ts` export `[]`). Nothing may ever be fabricated.
+> **Current state of the frontend:** all data operations are isolated behind three service modules (`src/services/reviewService.ts`, `src/services/clientReviewService.ts`, `src/services/settingsService.ts`). **They are dual-mode:** when `VITE_API_BASE_URL` is set (e.g. `http://localhost:4000` in `frontend/.env`) every call goes through `src/services/apiClient.ts` to the real backend per the table below; without it, the services fall back to a `localStorage` mirror so the prototype still runs offline. **No seed data ships** — every review dataset is intentionally empty (`src/data/reviews.ts`, `src/data/clientReviews.ts` export `[]`; the backend database ships empty too). Nothing may ever be fabricated.
 
 ---
 
@@ -25,12 +25,12 @@
 | `clientReviewService.updateClientReview(id, patch)` | PATCH | `/api/admin/client-reviews/{id}` | admin |
 | `clientReviewService.setClientReviewStatus(id, status)` | PATCH | `/api/admin/client-reviews/{id}/status` | admin |
 | `clientReviewService.deleteClientReview(id)` | DELETE | `/api/admin/client-reviews/{id}` | admin |
-| `settingsService.getSettings()` | GET | `/api/admin/review-settings` | admin |
+| `settingsService.getSettings()` | GET | `/api/review-settings` | public (visibility read) |
 | `settingsService.updateSettings(patch)` | PATCH | `/api/admin/review-settings` | admin |
 | Demo form (`DemoRequestSection.tsx`) | POST | `/api/demo-requests` | public |
 | Contact form (`ContactPage.tsx`) | POST | `/api/contact-inquiries` | public |
 | Newsletter (`Footer.tsx`) | POST | `/api/newsletter/subscriptions` | public |
-| Admin sign-in (`useAdminSession.ts`) — currently client-only | POST | `/api/admin/auth/login` | public |
+| Admin sign-in (`useAdminSession.ts`) — wired to real JWT login | POST | `/api/admin/auth/login` | public |
 
 All endpoints: `Content-Type: application/json`, UTF-8. Suggested base URL via env: `VITE_API_BASE_URL` (frontend change is a one-line swap per service).
 
@@ -280,7 +280,9 @@ Note: `POST`/`PATCH` accept `source` as optional; omit the key entirely when unu
 
 ### 3.5 Review settings
 
-**`GET /api/admin/review-settings`** → `200` the singleton object (§2.4); create defaults on first read if missing.
+**`GET /api/review-settings`** → `200` the singleton object (§2.4), **unauthenticated**. Public pages need this read to know which sections to render; it exposes no secrets (only the three booleans).
+
+**`GET /api/admin/review-settings`** → `200` the same singleton object (§2.4); create defaults on first read if missing. Admin token required.
 **`PATCH /api/admin/review-settings`** — accepts any subset:
 
 ```json
@@ -289,13 +291,15 @@ Note: `POST`/`PATCH` accept `source` as optional; omit the key entirely when unu
 
 → `200` full updated object. The admin UI applies toggles immediately; public pages must reflect them on next fetch.
 
-### 3.6 Admin authentication (the missing piece)
+### 3.6 Admin authentication (implemented)
 
-The frontend's `/admin` sign-in is a **client-side demo gate only** — any email/password works. For production:
+The frontend's `/admin` sign-in **authenticates against the backend** when `VITE_API_BASE_URL` is set:
 
-- `POST /api/admin/auth/login` → `{ "token": "...", "user": { "email": "..." } }` (or an httpOnly session cookie — preferred).
-- Every `/api/admin/*` endpoint must reject unauthenticated/role-less callers with `401` / `403`.
-- Passwords hashed (bcrypt/argon2); login rate-limited.
+- `POST /api/admin/auth/login` → `{ "token": "...", "user": { "email": "..." } }` — only the seeded admin account (`ADMIN_EMAIL` / `ADMIN_PASSWORD` in the backend `.env`, created by `npm run seed`) is accepted; invalid credentials return `401`.
+- The frontend stores the JWT (`cynbit.admin.token` in localStorage) and sends `Authorization: Bearer <token>` on every `/api/admin/*` call.
+- Every `/api/admin/*` endpoint rejects unauthenticated callers with `401` (verified).
+- Passwords are hashed (bcrypt); tokens are signed JWTs expiring after 7 days.
+- Without `VITE_API_BASE_URL` (offline demo mode) the sign-in is a **client-side demo gate only** — any email/password works, clearly labelled in the UI.
 
 ---
 

@@ -66,6 +66,11 @@ function toPublicReview(doc: ReviewRecord): PublicReview {
   };
 }
 
+/** Epoch ms for a date that may have round-tripped through JSON (string). */
+function toTime(value: Date | string): number {
+  return typeof value === 'string' ? Date.parse(value) : value.getTime();
+}
+
 function toAdminReview(doc: ReviewRecord): AdminReview {
   return { ...toPublicReview(doc), email: doc.email };
 }
@@ -78,7 +83,7 @@ function toAdminReview(doc: ReviewRecord): AdminReview {
 export async function getReviews(req: Request, res: Response): Promise<void> {
   const productId = findProductOr404(req.params.productId);
   const reviews = await Review.find({ productId, status: 'approved' });
-  reviews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
   res.status(200).json(reviews.map(toPublicReview));
 }
 
@@ -133,7 +138,7 @@ export async function listAllReviews(req: Request, res: Response): Promise<void>
   }
 
   const reviews = await Review.find(filter);
-  reviews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
   res.status(200).json(reviews.map(toAdminReview));
 }
 

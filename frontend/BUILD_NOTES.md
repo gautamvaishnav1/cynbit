@@ -79,13 +79,16 @@ The project was delivered in successive phases. High-level order:
 | `src/data/products.ts`, `src/data/site.ts` | Static public-site content (products, case studies, FAQs, nav). Unchanged content; data-only. |
 | `src/utils/rating.ts` | Added `computeClientRatingSummary()` alongside `computeRatingSummary()`, `clampRating`, `approvedFor`, `starShare`, `sortReviews`, `formatAverage`, `formatReviewDate`. |
 
-### 3.3 Services (isolated data layers — REST swap points)
+### 3.3 Services (isolated data layers — dual-mode: REST API or localStorage)
+
+All three services are **dual-mode**. When `VITE_API_BASE_URL` is set (`frontend/.env`), every call goes through the shared fetch wrapper `src/services/apiClient.ts` to the real backend (JSON.md contract); without it, they fall back to a `localStorage` mirror so the prototype still runs offline. After every API mutation the services call `notify()` so contexts re-fetch and public/admin views stay in sync.
 
 | File | Change |
 | --- | --- |
-| `src/services/reviewService.ts` | Switched persistence `sessionStorage → localStorage` (moderation survives refresh). Storage key bumped to `cynbit.prototype.reviews.v2`. `submitReview` now creates reviews as **`pending`** unless the admin auto-approve setting is on. Added admin API: `listAllReviews`, `setReviewStatus`, `updateReview`, `deleteReview`, `subscribeReviews`. |
-| `src/services/clientReviewService.ts` | **New.** Full CRUD for company reviews (`getClientReviews`, `listAllClientReviews`, `getClientRatingSummary`, `createClientReview`, `updateClientReview`, `setClientReviewStatus`, `deleteClientReview`) + validation. Mirrors `localStorage` key `cynbit.prototype.clientReviews.v1`. |
-| `src/services/settingsService.ts` | **New.** Singleton section settings (`getSettings`, `updateSettings`, `resetSettings`, `getSettingsSnapshot`, `subscribeSettings`). Key `cynbit.prototype.reviewSettings.v1`. Defaults: both sections ON, auto-approve OFF. |
+| `src/services/apiClient.ts` | **New.** Shared fetch wrapper: base URL from `VITE_API_BASE_URL`, JSON handling, admin `Authorization: Bearer` token (localStorage key `cynbit.admin.token`), `ApiError` envelope parsing (`{ error: { code, message, fields } }`), exports `API_ENABLED`. |
+| `src/services/reviewService.ts` | Switched persistence `sessionStorage → localStorage` (moderation survives refresh). Storage key bumped to `cynbit.prototype.reviews.v2`. `submitReview` now creates reviews as **`pending`** unless the admin auto-approve setting is on. Added admin API: `listAllReviews`, `setReviewStatus`, `updateReview`, `deleteReview`, `subscribeReviews`. **REST-backed:** public list/summary/submit → `/api/products/:id/reviews[...]`; admin CRUD → `/api/admin/reviews[...]`. |
+| `src/services/clientReviewService.ts` | **New.** Full CRUD for company reviews (`getClientReviews`, `listAllClientReviews`, `getClientRatingSummary`, `createClientReview`, `updateClientReview`, `setClientReviewStatus`, `deleteClientReview`) + validation. Mirrors `localStorage` key `cynbit.prototype.clientReviews.v1`. **REST-backed:** `/api/client-reviews[...]` + `/api/admin/client-reviews[...]`. |
+| `src/services/settingsService.ts` | **New.** Singleton section settings (`getSettings`, `updateSettings`, `resetSettings`, `getSettingsSnapshot`, `subscribeSettings`). Key `cynbit.prototype.reviewSettings.v1`. Defaults: both sections ON, auto-approve OFF. **REST-backed:** public read → `GET /api/review-settings` (no auth needed on public pages); admin write → `PATCH /api/admin/review-settings`. |
 
 ### 3.4 Contexts & hooks
 
@@ -168,26 +171,48 @@ AdminPage JS                 —  → 32.33 kB    (lazy)
 
 ---
 
+## 4b. Backend integration pass (latest)
+
+The prototype is now **wired to the real backend** (`../Backend` — Express 5 + JSON file storage; MongoDB is not required). `VITE_API_BASE_URL=http://localhost:4000` in `frontend/.env` turns on real mode; removing it returns the app to pure-offline demo mode. Everything below was verified end-to-end (API smoke tests + in-browser flows) with **0 console errors**.
+
+| # | Change | Files |
+| --- | --- | --- |
+| 1 | Backend converted from MongoDB to **JSON file storage** (`Backend/data/*.json`) so it runs with no DB install. `Collection<T>` layer with `find/save/deleteOne`; all controllers de-chained (no Mongo query chaining); `createdAt` passed explicitly to `create()`. | `Backend/src/storage.ts` (new), all models, controllers, `db.ts`, `seedAdmin.ts`, `errorMiddleware.ts` |
+| 2 | Shared fetch wrapper with `API_ENABLED` flag, Bearer-token handling and API-envelope error parsing. | `src/services/apiClient.ts` (new) |
+| 3 | Review, client-review and settings services call the real REST endpoints (JSON.md contract) when API mode is on; `localStorage` mirror kept as offline fallback. Contexts re-fetch after every mutation. | `src/services/reviewService.ts`, `clientReviewService.ts`, `settingsService.ts` |
+| 4 | Admin sign-in authenticates for real: `POST /api/admin/auth/login` → JWT stored → attached to all `/api/admin/*` calls. Seeded admin (`npm run seed`): `admin@cynbit.in` / `Admin@12345`. Sign-in UI shows API errors and swaps copy between "Backend sign-in" and "Demo gate only". | `src/hooks/useAdminSession.ts`, `src/components/admin/AdminSignIn.tsx` |
+| 5 | **Bug fix:** public pages fetched the admin-only `/api/admin/review-settings` → 401 console noise. Added public `GET /api/review-settings` on the backend; the frontend settings service uses it. Admin route remains protected (401 without token). | `Backend/src/routes/settingsRoutes.ts`, `Backend/src/app.ts`, `src/services/settingsService.ts` |
+| 6 | **Bug fix:** admin lists returned 500 after data round-tripped through JSON (`createdAt.getTime is not a function` — dates reload as strings). All controller sorts/serializers now accept `Date | string`. | `Backend/src/controllers/reviewController.ts`, `clientReviewController.ts`, `formController.ts` |
+| 7 | Honest prototype copy is now API-aware (`API_ENABLED` conditionals): review dialog, review-form success text, admin footer, sign-in gate, settings "restore defaults" card. | `src/components/review/ReviewModal.tsx`, `ReviewForm.tsx`, `src/layouts/AdminLayout.tsx`, `src/components/admin/AdminSignIn.tsx`, `AdminSettingsPanel.tsx` |
+
+### Verification (API + browser)
+
+- API smoke: health 200 · empty lists `[]` · zeroed summaries · unknown product 404 · submit → 201 `status:"pending"` (server-owned) · pending not leaked publicly · 422 with `fields` map · login 200 / bad password 401 / admin routes 401 without token · approve → public list (email stripped) + computed summary · edit/delete 200/204/404 · settings GET/PATCH (public + admin) · auto-approve flow · client-review CRUD + validation.
+- Browser E2E: submit via dialog → "awaiting approval" (API copy) → sign in at `/admin` with seeded creds → moderate (approve updates counts live) → review appears on `/products` without email → client-review add via dialog → approve → appears on Home → section-settings toggle hides/shows the Home section (server truth confirmed) → **0 console errors** on `/`, `/products`, `/admin` throughout.
+
+---
+
 ## 5. Data & state architecture
 
 ```
-Component ──► Hook ──► Context ──► Service ──► localStorage (prototype)
-                                              └─ (future) fetch → REST API
+Component ──► Hook ──► Context ──► Service ──► REST API (VITE_API_BASE_URL set)
+                                               └─ localStorage mirror (offline demo mode)
 ```
 
 - **Public site** reads only **approved** reviews (`ReviewsContext`, `ClientReviewsContext`).
-- **Admin** reads **all statuses** (`useAllReviews`, `useAllClientReviews`) and mutates via the same services; the public contexts re-render automatically because they subscribe to the same service store.
+- **Admin** reads **all statuses** (`useAllReviews`, `useAllClientReviews`) and mutates via the same services; the public contexts re-render automatically because they subscribe to the same service store (local notify, or re-fetch after each API mutation).
 - **Settings** (`SettingsContext`) drive which public sections render and whether submissions auto-approve.
 - **Moderation flow:** public submit → `pending` (hidden) → admin approve → appears publicly with correct average/distribution. Auto-approve setting can skip the queue for demos.
-- **Session:** `useAdminSession` is a module-level store (shared across components) backed by a `sessionStorage` flag. **Demo only — no real auth.**
+- **Session:** `useAdminSession` is a module-level store (shared across components). With the API configured, the signed-in flag **is** the backend JWT (`cynbit.admin.token` in `localStorage`); offline it's a `sessionStorage` demo flag.
 
-**Storage keys (all `localStorage` unless noted):**
+**Storage keys (offline demo mode — all `localStorage` unless noted):**
 | Key | Contents |
 | --- | --- |
 | `cynbit.prototype.reviews.v2` | Product reviews (all statuses) |
 | `cynbit.prototype.clientReviews.v1` | Client/company reviews (all statuses) |
 | `cynbit.prototype.reviewSettings.v1` | Section settings singleton |
 | `cynbit.prototype.adminSession.v1` (+ `.email`) | Admin demo session (**`sessionStorage`**) |
+| `cynbit.admin.token` | Backend JWT (**real mode only**) |
 
 ---
 
@@ -246,13 +271,21 @@ utils/         cn, rating
 ## 8. Commands
 
 ```bash
+# Backend (../Backend) — required for real mode
+cd ../Backend
+npm install          # install deps
+npm run build        # compile TypeScript → dist/
+npm run seed         # create the admin account (admin@cynbit.in / Admin@12345)
+node dist/server.js  # API on http://localhost:4000 (data in Backend/data/*.json)
+
+# Frontend
 npm install       # install deps
-npm run dev       # dev server → http://localhost:5173
+npm run dev       # dev server → http://localhost:5173 (reads frontend/.env)
 npm run build     # type-check (tsc -b) + production build → dist/
 npm run preview   # serve the built dist/ locally
 ```
 
-Build pipeline: `tsc -b` (strict type-check, `noUnusedLocals`, `noUnusedParameters`) then `vite build`.
+Frontend build pipeline: `tsc -b` (strict type-check, `noUnusedLocals`, `noUnusedParameters`) then `vite build`. There is no separate linter configured — `tsc -b` + `vite build` are the checks.
 
 ---
 
@@ -262,8 +295,9 @@ These do **not** block a static deploy but must be addressed for a real launch (
 
 1. **Placeholder domain** — `cynbit-prototype.example.com` appears in `index.html` (canonical + OG/Twitter URLs), `public/robots.txt`, and `public/sitemap.xml`. Replace with the real deployment domain.
 2. **OG image** — `og:image` points to `/og-image.png`, which is not yet added. Provide a real **1200×630 PNG** (social scrapers don't reliably support SVG) or update the URL.
-3. **Backend** — wire the REST API per `JSON.md`; each service function is a one-line `fetch` swap. Delete the `localStorage` mirrors + empty seed files once live.
-4. **Real auth** — replace the demo `useAdminSession` gate with server-side auth; enforce role checks on every `/api/admin/*` endpoint (the client-side gate is cosmetic).
+3. ~~**Backend** — wire the REST API per `JSON.md`~~ **Done** — services call the real API when `VITE_API_BASE_URL` is set; the `localStorage` mirror remains only as an offline fallback (delete it once the backend is always available).
+4. ~~**Real auth** — replace the demo `useAdminSession` gate~~ **Done** — sign-in issues a backend JWT (7-day expiry) and every `/api/admin/*` route enforces it (401 without token). Consider httpOnly cookies + rate limiting for production hardening.
+5. **Backend storage** — currently JSON files (`Backend/data/`), ideal for demos/evaluation. Swap `Backend/src/storage.ts` for MongoDB/Postgres before handling real user data; keep `npm run seed` for the admin account.
 
 ---
 

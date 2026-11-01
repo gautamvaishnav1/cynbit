@@ -9,6 +9,11 @@ import {
   NewsletterInput,
 } from '../types';
 
+/** ISO timestamp for a date that may have round-tripped through JSON (string). */
+function toIso(value: Date | string): string {
+  return typeof value === 'string' ? value : value.toISOString();
+}
+
 /** POST /api/demo-requests (contract §2.5). */
 export async function createDemoRequest(req: Request, res: Response): Promise<void> {
   const input = req.body as DemoRequestInput;
@@ -24,7 +29,7 @@ export async function createDemoRequest(req: Request, res: Response): Promise<vo
 
   res.status(201).json({
     id: request._id,
-    receivedAt: request.createdAt.toISOString(),
+    receivedAt: toIso(request.createdAt),
   });
 }
 
@@ -43,7 +48,7 @@ export async function createContactInquiry(req: Request, res: Response): Promise
 
   res.status(201).json({
     id: inquiry._id,
-    receivedAt: inquiry.createdAt.toISOString(),
+    receivedAt: toIso(inquiry.createdAt),
   });
 }
 

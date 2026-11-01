@@ -41,6 +41,11 @@ function toClientReview(doc: ClientReviewRecord): ClientReviewView {
   };
 }
 
+/** Epoch ms for a date that may have round-tripped through JSON (string). */
+function toTime(value: Date | string): number {
+  return typeof value === 'string' ? Date.parse(value) : value.getTime();
+}
+
 /* ------------------------------------------------------------------
    Public client review endpoints (contract §3.3).
 ------------------------------------------------------------------- */
@@ -48,7 +53,7 @@ function toClientReview(doc: ClientReviewRecord): ClientReviewView {
 /** GET /api/client-reviews — approved only, newest first. */
 export async function getClientReviews(_req: Request, res: Response): Promise<void> {
   const reviews = await ClientReview.find({ status: 'approved' });
-  reviews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
   res.status(200).json(reviews.map(toClientReview));
 }
 
@@ -66,7 +71,7 @@ export async function getClientSummary(_req: Request, res: Response): Promise<vo
 /** GET /api/admin/client-reviews — all statuses, newest first. */
 export async function listAllClientReviews(_req: Request, res: Response): Promise<void> {
   const reviews = await ClientReview.find();
-  reviews.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
   res.status(200).json(reviews.map(toClientReview));
 }
 

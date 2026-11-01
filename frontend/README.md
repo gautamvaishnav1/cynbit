@@ -45,7 +45,7 @@ The **Products page** includes a reviews experience for each of the three produc
 
 - The shipped seed data contains **zero reviews** (both product reviews and client reviews). Every count, average and distribution is computed from actual data — nothing is fabricated.
 - Average rating, total count, the 5→1 star distribution and every list are derived from the review collection at runtime (empty states are shown until the first review is approved).
-- Any reviews submitted or entered in the running app are held **in memory + `localStorage` only** (prototype data). Nothing is sent anywhere — there is no backend.
+- Any reviews submitted or entered in the running app are stored by the **backend** (`../Backend`, JSON file storage) when `VITE_API_BASE_URL` is set in `frontend/.env`; without it, the app falls back to **in-memory + `localStorage`** prototype data. Nothing is fabricated either way.
 - The two public testimonials shown on the Home page are Cynbit's own published quotes; no star ratings are attached to them, because no real ratings exist.
 
 ### Moderation flow (admin → public)
@@ -60,13 +60,13 @@ The **Products page** includes a reviews experience for each of the three produc
 - Filter and sort reviews: **All / Highest / Lowest / Most recent**.
 - Read reviews (reviewer, star rating, date, body).
 - Submit a review via a modal form: product pre-selected, 1–5 interactive stars, 500–650 character body with live counter, inline validation, success and error states, cancel, focus trap, `Escape` to close, background scroll lock.
-- Request a product demo via the demo form (name, work email, company, product, message + consent checkbox) — also mock-only.
+- Request a product demo via the demo form (name, work email, company, product, message + consent checkbox) — posted to the backend when configured.
 
 ## Admin panel (`/admin`)
 
 A prototype back office for the whole reviews feature, linked discreetly from the footer ("Review Admin (prototype)"). It has its own chrome (no marketing header/footer).
 
-- **Sign-in gate** — demo only: any email + password opens the dashboard. There is **no real authentication**; a production build must authenticate server-side.
+- **Sign-in gate** — when `VITE_API_BASE_URL` is set, credentials are verified by the backend (`POST /api/admin/auth/login` → JWT; seeded admin: `admin@cynbit.in` / `Admin@12345` via `npm run seed` in `../Backend`). Without the env var it is a **demo gate** (any email + password) — clearly labelled in the UI.
 - **Dashboard stats** — awaiting moderation, published product reviews, published client reviews, company average rating (all computed, zeroed when empty).
 - **Product reviews tab** — every submission with status filters (All / Pending / Approved / Rejected with counts) and a product filter; per-row **Approve / Reject / Edit / Delete** (delete has a confirm step), row-level busy indicators and honest visibility hints.
 - **Client reviews tab** — manage the "real customers rating Cynbit" section: **Add / Edit / Approve / Reject / Delete** client reviews (client name, role/company, 1–5 stars, review body, optional source such as "Google" or "Clutch").
@@ -74,7 +74,7 @@ A prototype back office for the whole reviews feature, linked discreetly from th
   - show/hide the product reviews sections on the Products page,
   - show/hide the client reviews section on the Home page,
   - auto-approve new submissions (off by default → moderation required),
-  - **Reset all prototype data** (deletes every locally stored review and restores defaults).
+  - **Restore default settings** (resets the settings singleton; reviews are managed individually in the moderation tabs — offline mode additionally clears locally stored reviews).
 
 ## Client reviews section (Home page)
 
@@ -112,39 +112,36 @@ src/
                            computeClientRatingSummary, …)
 ```
 
-## Connecting a real backend later
+## Backend integration (done — dual-mode)
 
-Every data operation is isolated behind three services with async APIs identical to what a REST backend would provide:
+Every data operation is isolated behind three services with async APIs. **They are already wired to the real backend** (`../Backend`, Express 5 + JSON file storage) via the shared fetch wrapper `src/services/apiClient.ts` when `VITE_API_BASE_URL` is set (e.g. `http://localhost:4000` in `frontend/.env`); without it, the same functions fall back to a `localStorage` mirror so the prototype runs offline:
 
 ```ts
 // reviewService.ts
-getReviews(productId)         // GET    /api/products/:id/reviews?status=approved
+getReviews(productId)         // GET    /api/products/:id/reviews
 getRatingSummary(productId)   // GET    /api/products/:id/reviews/summary
 submitReview(input)           // POST   /api/products/:id/reviews  (server sets status)
-listAllReviews()              // GET    /api/admin/reviews
+listAllReviews()              // GET    /api/admin/reviews           (Bearer token)
 setReviewStatus(id, status)   // PATCH  /api/admin/reviews/:id/status
 updateReview(id, patch)       // PATCH  /api/admin/reviews/:id
 deleteReview(id)              // DELETE /api/admin/reviews/:id
 
 // clientReviewService.ts
-getClientReviews()            // GET    /api/client-reviews?status=approved
-listAllClientReviews()        // GET    /api/admin/client-reviews
+getClientReviews()            // GET    /api/client-reviews
+listAllClientReviews()        // GET    /api/admin/client-reviews    (Bearer token)
 createClientReview(input)     // POST   /api/admin/client-reviews
 updateClientReview(id, patch) // PATCH  /api/admin/client-reviews/:id
 setClientReviewStatus(id, s)  // PATCH  /api/admin/client-reviews/:id/status
 deleteClientReview(id)        // DELETE /api/admin/client-reviews/:id
 
 // settingsService.ts
-getSettings()                 // GET    /api/admin/review-settings
-updateSettings(patch)         // PATCH  /api/admin/review-settings
+getSettings()                 // GET    /api/review-settings   (public — section visibility)
+updateSettings(patch)         // PATCH  /api/admin/review-settings  (Bearer token)
 ```
 
-To integrate a real API:
+Run it: `cd ../Backend && npm install && npm run build && npm run seed && node dist/server.js`, then `npm run dev` in this folder. Admin credentials: `admin@cynbit.in` / `Admin@12345`.
 
-1. Replace the bodies of those functions with `fetch` calls (base URL + auth headers of your choice).
-2. Delete the `localStorage` mirrors and seed files (`src/data/reviews.ts`, `src/data/clientReviews.ts`); the UI talks only to the services and contexts.
-3. Replace the demo `useAdminSession` gate with real authentication, and enforce role checks server-side on every `/api/admin/*` endpoint (the client-side gate is cosmetic).
-4. Moderation statuses already flow end-to-end: submissions default to `pending` (unless the server's config says otherwise) and only `approved` reviews reach the public queries.
+To drop the offline fallback entirely: delete the `localStorage` mirrors and seed files (`src/data/reviews.ts`, `src/data/clientReviews.ts`) once the backend is always available. Moderation statuses already flow end-to-end: submissions default to `pending` (or the server's `autoApproveSubmissions` decides) and only `approved` reviews reach the public queries.
 
 ## Accessibility
 
@@ -162,11 +159,11 @@ The build is production-ready. Hardening in place:
 - **SPA routing** — `public/_redirects` (Netlify) and `vercel.json` (Vercel) rewrite all paths to `index.html`, so deep links like `/products` and `/admin` work on refresh.
 - **SEO / social** — `index.html` ships Open Graph + Twitter card meta and a canonical URL; `public/robots.txt` allows public routes, disallows `/admin`, and points to `public/sitemap.xml` (public routes only).
 - **Git hygiene** — `.gitignore` excludes `node_modules/`, `dist/`, `.env*` and editor/OS junk so secrets and build artifacts are never committed.
-- **Environment** — no secrets are committed. Add a `VITE_API_BASE_URL` to `.env` when wiring the real backend (see `JSON.md`).
+- **Environment** — no secrets are committed. `frontend/.env` sets `VITE_API_BASE_URL=http://localhost:4000` for local development (git-ignored; see `JSON.md`).
 
 ### Before you deploy (checklist)
 
 1. Replace the `cynbit-prototype.example.com` placeholder domain in `index.html`, `public/robots.txt` and `public/sitemap.xml` with the real deployment domain.
 2. Add a real `public/og-image.png` (1200×630) — social scrapers don't reliably support SVG.
-3. Wire the backend per `JSON.md` and swap the demo `useAdminSession` gate for real auth.
+3. Deploy the backend (`../Backend`) and point `VITE_API_BASE_URL` at it; consider swapping the JSON-file storage for a real database and adding httpOnly cookies + login rate limiting.
 4. `npm run build` then serve `dist/` (or use your host's Vite/SPA preset).
