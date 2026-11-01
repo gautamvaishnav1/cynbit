@@ -1,25 +1,25 @@
-import { HydratedDocument, Schema, model } from 'mongoose';
+import { Collection } from '../storage';
 
-import { ReviewSectionSettings } from '../types';
-
-/** Singleton row controlling what the public site shows (contract §2.4). */
-export interface ReviewSettingsRecord extends ReviewSectionSettings {
+export interface ReviewSettingsRecord {
   _id: string;
+  productReviewsEnabled: boolean;
+  clientReviewsEnabled: boolean;
+  autoApproveSubmissions: boolean;
 }
 
-export type ReviewSettingsDoc = HydratedDocument<ReviewSettingsRecord>;
+export type ReviewSettingsDoc = ReviewSettingsRecord & {
+  save(): Promise<ReviewSettingsDoc>;
+};
 
-const reviewSettingsSchema = new Schema<ReviewSettingsRecord>(
-  {
-    _id: { type: String, default: 'main' },
-    productReviewsEnabled: { type: Boolean, required: true, default: true },
-    clientReviewsEnabled: { type: Boolean, required: true, default: true },
-    autoApproveSubmissions: { type: Boolean, required: true, default: false },
-  },
-  { versionKey: false },
-);
+export const ReviewSettings = new Collection<ReviewSettingsRecord>('reviewSettings');
 
-export const ReviewSettings = model<ReviewSettingsRecord>(
-  'ReviewSettings',
-  reviewSettingsSchema,
-);
+const originalFindOne = ReviewSettings.findOne.bind(ReviewSettings);
+ReviewSettings.findOne = async () => {
+  const doc = await originalFindOne({});
+  return doc;
+};
+
+const originalCreate = ReviewSettings.create.bind(ReviewSettings);
+ReviewSettings.create = async (input: Omit<ReviewSettingsRecord, '_id'>) => {
+  return originalCreate(input);
+};

@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import { NextFunction, Request, Response } from 'express';
 
 import { ApiError } from '../utils/ApiError';
@@ -48,21 +47,8 @@ export function errorMiddleware(
     return;
   }
 
-  /* Second safety net: schema-level failures still answer as 422. */
-  if (error instanceof mongoose.Error.ValidationError) {
-    const fields: Record<string, string> = {};
-    for (const [path, detail] of Object.entries(error.errors)) {
-      fields[path] = detail.message;
-    }
-    const firstMessage =
-      Object.values(fields)[0] ?? 'Please check your submitted information.';
-    const body: ApiErrorResponse = {
-      error: { code: 'VALIDATION_FAILED', message: firstMessage, fields },
-    };
-    res.status(422).json(body);
-    return;
-  }
-
+  /* Express-validator already converts schema failures into ApiError(422)
+     which is handled above. No mongoose-specific errors occur with file storage. */
   logger.error(`Unhandled error on ${req.method} ${req.originalUrl}`, error);
   sendError(res, 500, 'INTERNAL', 'Something went wrong on the server.');
 }

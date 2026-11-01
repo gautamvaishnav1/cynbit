@@ -1,25 +1,31 @@
-import { randomUUID } from 'node:crypto';
-import { HydratedDocument, Schema, model } from 'mongoose';
+import { Collection } from '../storage';
 
-/** Footer newsletter sign-ups — one row per email (unique index, contract §2.5). */
 export interface NewsletterSubscriberRecord {
   _id: string;
   email: string;
   createdAt: Date;
 }
 
-export type NewsletterSubscriberDoc = HydratedDocument<NewsletterSubscriberRecord>;
+export type NewsletterSubscriberDoc = NewsletterSubscriberRecord & {
+  save(): Promise<NewsletterSubscriberDoc>;
+};
 
-const newsletterSubscriberSchema = new Schema<NewsletterSubscriberRecord>(
-  {
-    _id: { type: String, default: () => randomUUID() },
-    email: { type: String, required: true, trim: true, lowercase: true, unique: true, maxlength: 254 },
-    createdAt: { type: Date, required: true, default: () => new Date() },
-  },
-  { versionKey: false },
-);
+export const NewsletterSubscriber = new Collection<NewsletterSubscriberRecord>('newsletterSubscribers');
 
-export const NewsletterSubscriber = model<NewsletterSubscriberRecord>(
-  'NewsletterSubscriber',
-  newsletterSubscriberSchema,
-);
+function hydrate(doc: NewsletterSubscriberRecord): NewsletterSubscriberDoc {
+  return Object.assign(doc, {
+    createdAt: new Date(doc.createdAt),
+  }) as NewsletterSubscriberDoc;
+}
+
+const originalFindOne = NewsletterSubscriber.findOne.bind(NewsletterSubscriber);
+NewsletterSubscriber.findOne = async (query: Partial<NewsletterSubscriberRecord>) => {
+  const doc = await originalFindOne(query);
+  return doc ? hydrate(doc) : null;
+};
+
+const originalCreate = NewsletterSubscriber.create.bind(NewsletterSubscriber);
+NewsletterSubscriber.create = async (input: Omit<NewsletterSubscriberRecord, '_id'>) => {
+  const doc = await originalCreate({ ...input, createdAt: new Date() });
+  return hydrate(doc);
+};

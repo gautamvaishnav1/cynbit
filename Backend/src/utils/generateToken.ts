@@ -1,10 +1,11 @@
+import { ApiError } from '../utils/ApiError';
 import jwt, { SignOptions } from 'jsonwebtoken';
 
 /** Sign a short-lived admin JWT using JWT_SECRET from the .env file. */
 export function generateAdminToken(admin: { id: string; email: string }): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    throw new Error('JWT_SECRET is missing. Copy .env.example to .env and set it.');
+    throw new ApiError(500, 'INTERNAL', 'Authentication is not configured on the server.');
   }
 
   const options: SignOptions = {

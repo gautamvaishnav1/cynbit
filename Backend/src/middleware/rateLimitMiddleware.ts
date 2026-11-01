@@ -30,7 +30,8 @@ export function createRateLimiter(name: string, options: RateLimitOptions) {
 
   return function rateLimit(req: Request, res: Response, next: NextFunction): void {
     const now = Date.now();
-    const key = req.ip ?? 'unknown-ip';
+    /* With trust proxy enabled, req.ip is the real client IP even behind a load balancer. */
+    const key = req.ip ?? req.socket?.remoteAddress ?? 'unknown-ip';
     let record = hits.get(key);
 
     if (!record || record.resetAt <= now) {

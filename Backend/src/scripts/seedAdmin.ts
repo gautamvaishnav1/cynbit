@@ -1,7 +1,6 @@
 import 'dotenv/config';
 
 import bcrypt from 'bcrypt';
-import mongoose from 'mongoose';
 
 import { connectDB } from '../config/db';
 import { logger } from '../utils/logger';
@@ -31,15 +30,12 @@ async function seedAdmin(): Promise<void> {
   const existing = await Admin.findOne({ email });
 
   if (existing) {
-    existing.passwordHash = passwordHash;
-    await existing.save();
-    logger.info(`Admin already existed — password hash synced for ${email}.`);
+    /* Production-safe: never overwrite an existing admin's password on seed. */
+    logger.info(`Admin already exists for ${email} — leaving password unchanged.`);
   } else {
     await Admin.create({ email, passwordHash });
     logger.info(`Admin created: ${email}`);
   }
-
-  await mongoose.disconnect();
 }
 
 seedAdmin().catch((error: unknown) => {

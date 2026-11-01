@@ -57,20 +57,18 @@ export async function createContactInquiry(req: Request, res: Response): Promise
 export async function subscribeNewsletter(req: Request, res: Response): Promise<void> {
   const input = req.body as NewsletterInput;
 
-  try {
-    const subscriber = await NewsletterSubscriber.create({ email: input.email });
-    res.status(201).json({ id: subscriber._id });
-  } catch (error) {
-    if (isDuplicateKeyError(error)) {
-      res.status(409).json({
-        error: {
-          code: 'CONFLICT',
-          message: 'This email is already subscribed to the newsletter.',
-          fields: { email: 'This email is already subscribed.' },
-        },
-      });
-      return;
-    }
-    throw error;
+  const existing = await NewsletterSubscriber.findOne({ email: input.email.toLowerCase() });
+  if (existing) {
+    res.status(409).json({
+      error: {
+        code: 'CONFLICT',
+        message: 'This email is already subscribed to the newsletter.',
+        fields: { email: 'This email is already subscribed.' },
+      },
+    });
+    return;
   }
+
+  const subscriber = await NewsletterSubscriber.create({ email: input.email });
+  res.status(201).json({ id: subscriber._id });
 }

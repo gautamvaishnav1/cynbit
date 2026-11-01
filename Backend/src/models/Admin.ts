@@ -1,26 +1,33 @@
-import { randomUUID } from 'node:crypto';
-import { HydratedDocument, Schema, model } from 'mongoose';
+import { Collection } from '../storage';
 
-/** The single admin account. Only a bcrypt hash is ever stored. */
 export interface AdminRecord {
   _id: string;
   email: string;
   passwordHash: string;
-  role: 'admin';
+  role: string;
   createdAt: Date;
 }
 
-export type AdminDoc = HydratedDocument<AdminRecord>;
+export type AdminDoc = AdminRecord & {
+  save(): Promise<AdminDoc>;
+};
 
-const adminSchema = new Schema<AdminRecord>(
-  {
-    _id: { type: String, default: () => randomUUID() },
-    email: { type: String, required: true, trim: true, lowercase: true, unique: true },
-    passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['admin'], default: 'admin' },
-    createdAt: { type: Date, required: true, default: () => new Date() },
-  },
-  { versionKey: false },
-);
+export const Admin = new Collection<AdminRecord>('adminUsers');
 
-export const Admin = model<AdminRecord>('Admin', adminSchema);
+function hydrate(doc: AdminRecord): AdminDoc {
+  return Object.assign(doc, {
+    createdAt: new Date(doc.createdAt),
+  }) as AdminDoc;
+}
+
+const originalFindOne = Admin.findOne.bind(Admin);
+Admin.findOne = async (query: Partial<AdminRecord>) => {
+  const doc = await originalFindOne(query);
+  return doc ? hydrate(doc) : null;
+};
+
+const originalCreate = Admin.create.bind(Admin);
+Admin.create = async (input: Omit<AdminRecord, '_id'>) => {
+  const doc = await originalCreate({ ...input, createdAt: new Date() });
+  return hydrate(doc);
+};

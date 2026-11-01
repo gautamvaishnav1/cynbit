@@ -1,19 +1,10 @@
-import mongoose from 'mongoose';
+import { ensureDir } from '../storage';
 
 import { logger } from '../utils/logger';
 
-/** Connect to MongoDB using MONGODB_URI from the .env file. */
+/* No external database: data lives in JSON files under ./data/.
+   This replaces the MongoDB/Mongoose connection for local development. */
 export async function connectDB(): Promise<void> {
-  const mongoUri = process.env.MONGODB_URI;
-  if (!mongoUri) {
-    throw new Error('MONGODB_URI is missing. Copy .env.example to .env and set it.');
-  }
-
-  await mongoose.connect(mongoUri);
-  logger.info(`MongoDB connected: ${mongoose.connection.name}`);
+  await ensureDir();
+  logger.info('File storage initialized (data directory ready)');
 }
-
-/* Log unexpected connection drops instead of crashing silently. */
-mongoose.connection.on('error', (error: Error) => {
-  logger.error('MongoDB connection error', error);
-});

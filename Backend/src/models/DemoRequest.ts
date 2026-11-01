@@ -1,12 +1,8 @@
-import { randomUUID } from 'node:crypto';
-import { HydratedDocument, Schema, model } from 'mongoose';
+import { Collection } from '../storage';
 
-import { PRODUCT_IDS, ProductId } from '../types';
-
-/** "Schedule a Demo" submissions from the Products page (contract §2.5). */
 export interface DemoRequestRecord {
   _id: string;
-  productId: ProductId;
+  productId: string;
   fullName: string;
   workEmail: string;
   companyName?: string;
@@ -14,19 +10,20 @@ export interface DemoRequestRecord {
   createdAt: Date;
 }
 
-export type DemoRequestDoc = HydratedDocument<DemoRequestRecord>;
+export type DemoRequestDoc = DemoRequestRecord & {
+  save(): Promise<DemoRequestDoc>;
+};
 
-const demoRequestSchema = new Schema<DemoRequestRecord>(
-  {
-    _id: { type: String, default: () => randomUUID() },
-    productId: { type: String, required: true, enum: PRODUCT_IDS },
-    fullName: { type: String, required: true, trim: true, maxlength: 120 },
-    workEmail: { type: String, required: true, trim: true, lowercase: true, maxlength: 254 },
-    companyName: { type: String, trim: true, maxlength: 150 },
-    message: { type: String, required: true, trim: true, minlength: 15, maxlength: 3000 },
-    createdAt: { type: Date, required: true, default: () => new Date() },
-  },
-  { versionKey: false },
-);
+export const DemoRequest = new Collection<DemoRequestRecord>('demoRequests');
 
-export const DemoRequest = model<DemoRequestRecord>('DemoRequest', demoRequestSchema);
+function hydrate(doc: DemoRequestRecord): DemoRequestDoc {
+  return Object.assign(doc, {
+    createdAt: new Date(doc.createdAt),
+  }) as DemoRequestDoc;
+}
+
+const originalCreate = DemoRequest.create.bind(DemoRequest);
+DemoRequest.create = async (input: Omit<DemoRequestRecord, '_id'>) => {
+  const doc = await originalCreate({ ...input, createdAt: new Date() });
+  return hydrate(doc);
+};

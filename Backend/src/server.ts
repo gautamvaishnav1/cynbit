@@ -4,7 +4,7 @@ import app from './app';
 import { connectDB } from './config/db';
 import { logger } from './utils/logger';
 
-const REQUIRED_ENV_VARS = ['MONGODB_URI', 'JWT_SECRET'] as const;
+const REQUIRED_ENV_VARS = ['JWT_SECRET'] as const;
 
 function reportMissingEnvVars(): void {
   const missing = REQUIRED_ENV_VARS.filter((name) => !process.env[name]);

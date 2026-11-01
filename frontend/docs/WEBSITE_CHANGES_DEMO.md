@@ -147,7 +147,9 @@ Add new files to `frontend/docs/screenshots/` using exactly those filenames and 
 - **Client reviews tab** — add and manage the client testimonials shown on the home page.
 - **Section settings tab** — instant switches to show/hide the product-reviews section and the client-reviews section, an auto-approve toggle, and a "reset prototype data" control.
 
-⬜ *Pending — drop in `screenshots/06-admin-dashboard.png` (stats + three tabs) and `screenshots/07-admin-moderation.png` (Approve/Reject/Edit/Delete controls).*
+![Admin dashboard](screenshots/06-admin-dashboard.png)
+
+![Admin moderation — Approve / Reject / Edit / Delete](screenshots/07-admin-moderation.png)
 
 #### ✅ Honest empty state (important)
 The prototype ships with **no** reviews and no fake ratings. Empty sections show a clear "No reviews yet — be the first" message instead of invented numbers. This is deliberate: publishing fake testimonials would be misleading and risky.

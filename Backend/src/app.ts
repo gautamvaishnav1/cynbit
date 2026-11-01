@@ -13,12 +13,21 @@ const app = express();
 /* Do not advertise the framework in response headers. */
 app.disable('x-powered-by');
 
-/* Only the React dev server may call this API (change FRONTEND_URL in .env). */
+/* Accept the Vite dev server on any localhost port in the 5173-5179 range. */
 const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
+const allowedOrigins = [frontendUrl];
+for (let p = 5173; p <= 5179; p++) {
+  allowedOrigins.push(`http://localhost:${p}`);
+}
 
 app.use(
   cors({
-    origin: frontendUrl,
+    origin: (origin, callback) => {
+      /* Allow requests with no origin (e.g. curl, mobile apps). */
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
+    },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
