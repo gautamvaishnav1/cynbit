@@ -4,7 +4,7 @@ import { getOrCreateSettings } from './settingsController';
 import { computeSummary } from '../utils/rating';
 import { ApiError } from '../utils/ApiError';
 import { isProductId, isReviewStatus, isUuid, ProductId, RatingSummary, ReviewStatus } from '../types';
-import { Review, ReviewRecord } from '../models/Review';
+import { Review, ReviewDoc } from '../models/Review';
 
 export interface PublicReview {
   id: string;
@@ -38,7 +38,7 @@ function findProductOr404(productIdParam: string | string[]): ProductId {
   return productId;
 }
 
-async function findReviewOr404(idParam: string | string[]): Promise<ReviewRecord> {
+async function findReviewOr404(idParam: string | string[]): Promise<ReviewDoc> {
   const id = readParam(idParam);
   if (!isUuid(id)) {
     throw new ApiError(404, 'NOT_FOUND', 'Review not found.');
@@ -50,28 +50,19 @@ async function findReviewOr404(idParam: string | string[]): Promise<ReviewRecord
   return review;
 }
 
-function toIsoString(value: Date | string): string {
-  return typeof value === 'string' ? value : value.toISOString();
-}
-
-function toPublicReview(doc: ReviewRecord): PublicReview {
+function toPublicReview(doc: ReviewDoc): PublicReview {
   return {
-    id: doc._id,
+    id: doc._id.toString(),
     productId: doc.productId,
     customerName: doc.customerName,
     rating: doc.rating,
     comment: doc.comment,
-    createdAt: toIsoString(doc.createdAt),
+    createdAt: doc.createdAt.toISOString(),
     status: doc.status,
   };
 }
 
-/** Epoch ms for a date that may have round-tripped through JSON (string). */
-function toTime(value: Date | string): number {
-  return typeof value === 'string' ? Date.parse(value) : value.getTime();
-}
-
-function toAdminReview(doc: ReviewRecord): AdminReview {
+function toAdminReview(doc: ReviewDoc): AdminReview {
   return { ...toPublicReview(doc), email: doc.email };
 }
 
@@ -82,15 +73,16 @@ function toAdminReview(doc: ReviewRecord): AdminReview {
 /** GET /api/products/:productId/reviews — approved only, newest first. */
 export async function getReviews(req: Request, res: Response): Promise<void> {
   const productId = findProductOr404(req.params.productId);
-  const reviews = await Review.find({ productId, status: 'approved' });
-  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
+  const reviews = await Review.find({ productId, status: 'approved' }).sort({
+    createdAt: -1,
+  });
   res.status(200).json(reviews.map(toPublicReview));
 }
 
 /** GET /api/products/:productId/reviews/summary — zeroed when empty. */
 export async function getSummary(req: Request, res: Response): Promise<void> {
   const productId = findProductOr404(req.params.productId);
-  const docs = await Review.find({ productId, status: 'approved' });
+  const docs = await Review.find({ productId, status: 'approved' }).select('rating');
   const summary = computeSummary(docs.map((doc) => doc.rating));
   const response: RatingSummary = { productId, ...summary };
   res.status(200).json(response);
@@ -116,7 +108,6 @@ export async function submitReview(req: Request, res: Response): Promise<void> {
     rating: input.rating,
     comment: input.comment,
     status: settings.autoApproveSubmissions ? 'approved' : 'pending',
-    createdAt: new Date(),
   });
 
   /* Contract §2.1: the POST response is the full object (email included). */
@@ -129,7 +120,7 @@ export async function submitReview(req: Request, res: Response): Promise<void> {
 
 /** GET /api/admin/reviews — all statuses, optional ?status= & ?productId=. */
 export async function listAllReviews(req: Request, res: Response): Promise<void> {
-  const filter: { status?: ReviewStatus; productId?: ProductId } = {};
+  const filter: Record<string, string> = {};
   if (typeof req.query.status === 'string' && isReviewStatus(req.query.status)) {
     filter.status = req.query.status;
   }
@@ -137,8 +128,7 @@ export async function listAllReviews(req: Request, res: Response): Promise<void>
     filter.productId = req.query.productId;
   }
 
-  const reviews = await Review.find(filter);
-  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
+  const reviews = await Review.find(filter).sort({ createdAt: -1 });
   res.status(200).json(reviews.map(toAdminReview));
 }
 
@@ -148,7 +138,7 @@ export async function setReviewStatus(req: Request, res: Response): Promise<void
   const { status } = req.body as ReviewStatusUpdate;
 
   review.status = status;
-  await Review.save(review);
+  await review.save();
 
   res.status(200).json(toAdminReview(review));
 }
@@ -160,7 +150,7 @@ export async function updateReview(req: Request, res: Response): Promise<void> {
 
   if (patch.rating !== undefined) review.rating = patch.rating;
   if (patch.comment !== undefined) review.comment = patch.comment;
-  await Review.save(review);
+  await review.save();
 
   res.status(200).json(toAdminReview(review));
 }
@@ -168,7 +158,7 @@ export async function updateReview(req: Request, res: Response): Promise<void> {
 /** DELETE /api/admin/reviews/:id — hard delete. */
 export async function deleteReview(req: Request, res: Response): Promise<void> {
   const id = readParam(req.params.id);
-  await Review.findById(id); // verify exists (throws 404 if not)
-  await Review.deleteOne(id);
+  await findReviewOr404(id); // verify exists (throws 404 if not)
+  await Review.deleteOne({ _id: id });
   res.status(204).end();
 }

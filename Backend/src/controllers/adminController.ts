@@ -28,7 +28,7 @@ export async function login(req: Request, res: Response): Promise<void> {
   const passwordMatches = await bcrypt.compare(input.password, admin.passwordHash);
   if (!passwordMatches) throw invalidCredentials;
 
-  const token = generateAdminToken({ id: admin._id, email: admin.email });
+  const token = generateAdminToken({ id: admin._id.toString(), email: admin.email });
   logger.info(`Admin signed in: ${admin.email}`);
 
   const response: LoginResponse = { token, user: { email: admin.email } };

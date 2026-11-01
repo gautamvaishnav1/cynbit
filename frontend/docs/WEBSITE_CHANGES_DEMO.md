@@ -95,31 +95,23 @@ A recorded walkthrough of the upgraded site — the new reviews, the client-revi
 
 ## 4. Screenshots (visual proof)
 
-> **Note to presenter:** Images live in `docs/screenshots/`. **4 of 8 are already captured** — the product-reviews section, the admin dashboard, the moderation controls, and the honest empty state (all marked ✅ below). The remaining 4 are marked ⬜ and will render automatically the moment they're added with the listed filename.
+> **Note to presenter:** Images live in `docs/screenshots/` — 5 shots are included below (product reviews, review form, admin dashboard, moderation controls, and the honest empty state).
 
-### 4.1 Before vs. After
+### 4.1 The upgraded prototype
 
-| Existing website | Upgraded prototype |
-| --- | --- |
-| ⬜ *pending — capture `01`* *(features only, no ratings)* | ![Upgraded products reviews](screenshots/02-new-products-reviews.png) *(adds star ratings + reviews per product)* |
-| ⬜ *pending — capture `03`* | ⬜ *pending — capture `04` (client-reviews trust section)* |
+| Upgraded prototype |
+| --- |
+| ![Upgraded products reviews](screenshots/02-new-products-reviews.png) *(adds star ratings + reviews per product)* |
 
-### 4.2 Screenshot shot list (capture once — ~2 minutes)
+### 4.2 Screenshot list
 
-Open the prototype at **http://localhost:5175** and the live site at **https://www.cynbit.in**, then capture:
-
-| File to save | Page | What to show | Status |
-| --- | --- | --- | --- |
-| `01-existing-products.png` | `cynbit.in/products` (live) | The current products page (no ratings) — the "before". | ⬜ needed |
-| `02-new-products-reviews.png` | `localhost:5175/products` | The new **Reviews & Ratings** section (stars, breakdown, "Write a review"). | ✅ added |
-| `03-existing-home.png` | `cynbit.in` (live) | The current home page — the "before". | ⬜ needed |
-| `04-new-home-client-reviews.png` | `localhost:5175/` | The new **Client Reviews of Cynbit** section on the home page. | ⬜ needed |
-| `05-review-form.png` | `localhost:5175/products` | The **"Write a review"** modal open (star picker, fields, char counter). | ⬜ needed |
-| `06-admin-dashboard.png` | `localhost:5176/admin` | The **admin dashboard** — stats + the three tabs (Product reviews / Client reviews / Section settings). | ✅ added |
-| `07-admin-moderation.png` | `localhost:5176/admin` | A submitted review with **Approve / Reject / Edit / Delete** controls. | ✅ added |
-| `08-empty-state.png` | `localhost:5175/products` | The honest **"No reviews yet"** empty state (proves nothing is fabricated). | ✅ added |
-
-Add new files to `frontend/docs/screenshots/` using exactly those filenames and every reference above resolves automatically.
+| File | What it shows | Status |
+| --- | --- | --- |
+| `02-new-products-reviews.png` | The new **Reviews & Ratings** section (stars, breakdown, "Write a review"). | ✅ included |
+| `05-review-form.png` | The **"Write a review"** modal open (star picker, fields, char counter, backend-submission notice). | ✅ included |
+| `06-admin-dashboard.png` | The **admin dashboard** — stats + the three tabs (Product reviews / Client reviews / Section settings). | ✅ included |
+| `07-admin-moderation.png` | A submitted review with **Approve / Reject / Edit / Delete** controls. | ✅ included |
+| `08-empty-state.png` | The honest **"No reviews yet"** empty state (proves nothing is fabricated). | ✅ included |
 
 ### 4.3 New feature detail
 
@@ -132,14 +124,16 @@ Add new files to `frontend/docs/screenshots/` using exactly those filenames and 
 
 ![Product reviews section](screenshots/02-new-products-reviews.png)
 
-⬜ *Pending — drop in `screenshots/05-review-form.png` to show the "Write a review" modal (star picker, fields, char counter).*
+#### ✍️ "Write a review" modal
+
+The submission form opens as a focused dialog: product pre-selected, customer name and email (with a "never displayed publicly" note), 1–5 interactive stars, and a written review with a live character counter. When the backend is connected, the notice explains that the review is submitted to the API, held for approval, and that emails are never shown publicly.
+
+![Write a review modal](screenshots/05-review-form.png)
 
 #### 🗣️ Client Reviews of Cynbit (Home page)
 - Shows the **company's overall average rating** and **approved client reviews** — real customers rating Cynbit as a partner.
 - Each card: client name, role/company, star rating, the quote, date, and an optional **source** (e.g. "via Google", "via Clutch") so prospects see the provenance.
 - **Admin-entered only** (no public form) — so only genuine, curated customer feedback appears.
-
-⬜ *Pending — drop in `screenshots/04-new-home-client-reviews.png` (the new client-reviews section on the home page).*
 
 #### 🛠️ Admin Panel (`/admin`)
 - **Dashboard** — at-a-glance counts: reviews awaiting approval, published product reviews, published client reviews, and the company's average rating.

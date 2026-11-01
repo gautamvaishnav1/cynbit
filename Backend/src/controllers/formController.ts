@@ -10,8 +10,8 @@ import {
 } from '../types';
 
 /** ISO timestamp for a date that may have round-tripped through JSON (string). */
-function toIso(value: Date | string): string {
-  return typeof value === 'string' ? value : value.toISOString();
+function toIso(value: Date): string {
+  return value.toISOString();
 }
 
 /** POST /api/demo-requests (contract §2.5). */
@@ -24,11 +24,10 @@ export async function createDemoRequest(req: Request, res: Response): Promise<vo
     workEmail: input.workEmail,
     companyName: input.companyName?.trim() || undefined,
     message: input.message,
-    createdAt: new Date(),
   });
 
   res.status(201).json({
-    id: request._id,
+    id: request._id.toString(),
     receivedAt: toIso(request.createdAt),
   });
 }
@@ -43,11 +42,10 @@ export async function createContactInquiry(req: Request, res: Response): Promise
     company: input.company?.trim() || undefined,
     industry: input.industry?.trim() || undefined,
     message: input.message,
-    createdAt: new Date(),
   });
 
   res.status(201).json({
-    id: inquiry._id,
+    id: inquiry._id.toString(),
     receivedAt: toIso(inquiry.createdAt),
   });
 }
@@ -56,18 +54,27 @@ export async function createContactInquiry(req: Request, res: Response): Promise
 export async function subscribeNewsletter(req: Request, res: Response): Promise<void> {
   const input = req.body as NewsletterInput;
 
-  const existing = await NewsletterSubscriber.findOne({ email: input.email.toLowerCase() });
-  if (existing) {
-    res.status(409).json({
-      error: {
-        code: 'CONFLICT',
-        message: 'This email is already subscribed to the newsletter.',
-        fields: { email: 'This email is already subscribed.' },
-      },
+  try {
+    const subscriber = await NewsletterSubscriber.create({
+      email: input.email.toLowerCase(),
     });
-    return;
+    res.status(201).json({ id: subscriber._id.toString() });
+  } catch (error: unknown) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 11000
+    ) {
+      res.status(409).json({
+        error: {
+          code: 'CONFLICT',
+          message: 'This email is already subscribed to the newsletter.',
+          fields: { email: 'This email is already subscribed.' },
+        },
+      });
+      return;
+    }
+    throw error;
   }
-
-  const subscriber = await NewsletterSubscriber.create({ email: input.email, createdAt: new Date() });
-  res.status(201).json({ id: subscriber._id });
 }

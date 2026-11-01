@@ -13,27 +13,22 @@ const app = express();
 /* Do not advertise the framework in response headers. */
 app.disable('x-powered-by');
 
-/* Accept the Vite dev server on any localhost port in the 5173-5179 range. */
+/* Behind a production load balancer, req.ip must reflect the real client. */
+app.set('trust proxy', true);
+
+/* Only the configured frontend origin may call this API (set FRONTEND_URL in .env). */
 const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
-const allowedOrigins = [frontendUrl];
-for (let p = 5173; p <= 5179; p++) {
-  allowedOrigins.push(`http://localhost:${p}`);
-}
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      /* Allow requests with no origin (e.g. curl, mobile apps). */
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error(`Not allowed by CORS: ${origin}`));
-    },
+    origin: frontendUrl,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
 
-app.use(express.json());
+/* Cap request bodies at 100 KB to reject abusive payloads. */
+app.use(express.json({ limit: '100kb' }));
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });

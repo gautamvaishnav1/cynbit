@@ -4,7 +4,7 @@ import { getOrCreateSettings } from './settingsController';
 import { computeSummary } from '../utils/rating';
 import { ApiError } from '../utils/ApiError';
 import { isUuid } from '../types';
-import { ClientReview, ClientReviewRecord } from '../models/ClientReview';
+import { ClientReview, ClientReviewDoc } from '../models/ClientReview';
 import {
   ClientRatingSummary,
   ClientReview as ClientReviewView,
@@ -12,7 +12,7 @@ import {
   ReviewStatusUpdate,
 } from '../types';
 
-async function findClientReviewOr404(idParam: string | string[]): Promise<ClientReviewRecord> {
+async function findClientReviewOr404(idParam: string | string[]): Promise<ClientReviewDoc> {
   const id = Array.isArray(idParam) ? idParam[0] : idParam;
   if (!isUuid(id)) {
     throw new ApiError(404, 'NOT_FOUND', 'Client review not found.');
@@ -24,26 +24,17 @@ async function findClientReviewOr404(idParam: string | string[]): Promise<Client
   return review;
 }
 
-function toIsoString(value: Date | string): string {
-  return typeof value === 'string' ? value : value.toISOString();
-}
-
-function toClientReview(doc: ClientReviewRecord): ClientReviewView {
+function toClientReview(doc: ClientReviewDoc): ClientReviewView {
   return {
-    id: doc._id,
+    id: doc._id.toString(),
     clientName: doc.clientName,
     clientTitle: doc.clientTitle,
     rating: doc.rating,
     comment: doc.comment,
     ...(doc.source ? { source: doc.source } : {}),
-    createdAt: toIsoString(doc.createdAt),
+    createdAt: doc.createdAt.toISOString(),
     status: doc.status,
   };
-}
-
-/** Epoch ms for a date that may have round-tripped through JSON (string). */
-function toTime(value: Date | string): number {
-  return typeof value === 'string' ? Date.parse(value) : value.getTime();
 }
 
 /* ------------------------------------------------------------------
@@ -52,14 +43,15 @@ function toTime(value: Date | string): number {
 
 /** GET /api/client-reviews — approved only, newest first. */
 export async function getClientReviews(_req: Request, res: Response): Promise<void> {
-  const reviews = await ClientReview.find({ status: 'approved' });
-  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
+  const reviews = await ClientReview.find({ status: 'approved' }).sort({
+    createdAt: -1,
+  });
   res.status(200).json(reviews.map(toClientReview));
 }
 
 /** GET /api/client-reviews/summary — zeroed when empty. */
 export async function getClientSummary(_req: Request, res: Response): Promise<void> {
-  const docs = await ClientReview.find({ status: 'approved' });
+  const docs = await ClientReview.find({ status: 'approved' }).select('rating');
   const summary: ClientRatingSummary = computeSummary(docs.map((doc) => doc.rating));
   res.status(200).json(summary);
 }
@@ -70,8 +62,7 @@ export async function getClientSummary(_req: Request, res: Response): Promise<vo
 
 /** GET /api/admin/client-reviews — all statuses, newest first. */
 export async function listAllClientReviews(_req: Request, res: Response): Promise<void> {
-  const reviews = await ClientReview.find();
-  reviews.sort((a, b) => toTime(b.createdAt) - toTime(a.createdAt));
+  const reviews = await ClientReview.find().sort({ createdAt: -1 });
   res.status(200).json(reviews.map(toClientReview));
 }
 
@@ -87,7 +78,6 @@ export async function createClientReview(req: Request, res: Response): Promise<v
     comment: input.comment,
     ...(input.source ? { source: input.source } : {}),
     status: settings.autoApproveSubmissions ? 'approved' : 'pending',
-    createdAt: new Date(),
   });
 
   res.status(201).json(toClientReview(review));
@@ -104,9 +94,9 @@ export async function updateClientReview(req: Request, res: Response): Promise<v
   if (patch.comment !== undefined) review.comment = patch.comment;
   if (patch.source !== undefined) {
     if (patch.source) review.source = patch.source;
-    else delete review.source;
+    else review.source = undefined;
   }
-  await ClientReview.save(review);
+  await review.save();
 
   res.status(200).json(toClientReview(review));
 }
@@ -117,7 +107,7 @@ export async function setClientReviewStatus(req: Request, res: Response): Promis
   const { status } = req.body as ReviewStatusUpdate;
 
   review.status = status;
-  await ClientReview.save(review);
+  await review.save();
 
   res.status(200).json(toClientReview(review));
 }
@@ -125,7 +115,7 @@ export async function setClientReviewStatus(req: Request, res: Response): Promis
 /** DELETE /api/admin/client-reviews/:id — hard delete. */
 export async function deleteClientReview(req: Request, res: Response): Promise<void> {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  await ClientReview.findById(id); // verify exists (throws 404 if not)
-  await ClientReview.deleteOne(id);
+  await findClientReviewOr404(id); // verify exists (throws 404 if not)
+  await ClientReview.deleteOne({ _id: id });
   res.status(204).end();
 }
